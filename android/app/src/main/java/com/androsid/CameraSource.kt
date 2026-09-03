@@ -35,6 +35,7 @@ class CameraSource(
     private var executor: ExecutorService? = null
     private var provider: ProcessCameraProvider? = null
     private var loggedRotation = false
+    private var camera: androidx.camera.core.Camera? = null
 
     fun start() {
         val exec = Executors.newSingleThreadExecutor().also { executor = it }
@@ -55,7 +56,7 @@ class CameraSource(
                     .build()
 
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(owner, selector, analysis)
+                camera = cameraProvider.bindToLifecycle(owner, selector, analysis)
                 Log.i(TAG, "camera bound")
             } catch (e: Exception) {
                 Log.e(TAG, "failed to bind camera", e)
@@ -65,8 +66,13 @@ class CameraSource(
 
     fun stop() {
         try { provider?.unbindAll() } catch (_: Exception) {}
+        camera = null
         executor?.shutdown()
         executor = null
+    }
+
+    fun setTorch(enabled:Boolean) {
+        camera?.cameraControl?.enableTorch(enabled)
     }
 
     private fun handleFrame(image: ImageProxy) {

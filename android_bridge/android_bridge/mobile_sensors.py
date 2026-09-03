@@ -8,6 +8,7 @@ from builtin_interfaces.msg import Time
 from rclpy.node import Node
 from rclpy.qos import QoSPresetProfiles
 from sensor_msgs.msg import BatteryState, CompressedImage, Imu, MagneticField, NavSatFix, NavSatStatus
+from std_msgs.msg import Bool
 
 TYPE_JSON = 0x01
 TYPE_FRAME = 0x02
@@ -74,6 +75,13 @@ class MobileSensors(Node):
         )
         self.pub_battery = self.create_publisher(
             BatteryState, "battery/state", sensor_qos
+        )
+
+        self.sub_torch = self.create_subscription(
+            Bool,
+            '/flashlight/cmd',
+            self._on_torch_cmd,
+            10
         )
 
         self._last_accel = None
@@ -268,6 +276,13 @@ class MobileSensors(Node):
             tech_code, BatteryState.POWER_SUPPLY_TECHNOLOGY_UNKNOWN
         )
         self.pub_battery.publish(msg)
+
+    def _on_torch_cmd(self, msg:Bool):
+        cmd = json.dumps({"cmd": "torch", "state": bool(msg.data)}) + "\n"
+        try:
+            self._sock.sendall(cmd.encode("utf-8"))
+        except Exception as e:
+            self.get_logger().error(f"Failed to send torch command: {e}")
 
 def main(args=None):
     rclpy.init(args=args)

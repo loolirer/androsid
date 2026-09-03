@@ -74,7 +74,9 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(PORT)
+        server = StreamServer(PORT) { cmdJson -> 
+            handleCommand(cmdJson)
+        }
         server.start()
 
         startForeground(NOTIF_ID, buildNotification())
@@ -218,6 +220,18 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         }
         batteryReceiver = receiver
         registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), null, handler)
+    }
+
+    private fun handleCommand(rawJson: String) {
+        try {
+            val obj = org.json.JSONObject(rawJson)
+            if (obj.optString("cmd") == "torch") {
+                val state = obj.optBoolean("state", false)
+                camera?.setTorch(state)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "failed to parse command: $rawJson", e)
+        }
     }
 
     // -------------------------------------------------------------- callbacks

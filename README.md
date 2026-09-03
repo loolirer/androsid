@@ -77,4 +77,17 @@ topics below:
 - `/camera/image_raw/compressed`
 - `/battery/state`
 
+You can also control device actuators:
+
+- /flashlight/cmd (`std_msgs/msg/Bool`): Turn the camera torch/flash on or off
+
+Turn on:
+```bash
+ros2 topic pub --once /flashlight/cmd std_msgs/msg/Bool "{data: true}"
+```
+
+Turn off:
+```bash
+ros2 topic pub --once /flashlight/cmd std_msgs/msg/Bool "{data: false}"
+```
 ---
