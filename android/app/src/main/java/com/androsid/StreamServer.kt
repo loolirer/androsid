@@ -22,7 +22,10 @@ import kotlin.concurrent.thread
  *
  * One socket carries everything so that every stream shares a single clock.
  */
-class StreamServer(private val port: Int) {
+class StreamServer(
+    private val port: Int, 
+    private val onCommandReceived: ((String) -> Unit)? = null
+    ) {
 
     companion object {
         const val TYPE_JSON: Int = 0x01
@@ -50,6 +53,18 @@ class StreamServer(private val port: Int) {
                         sock.tcpNoDelay = true
                         clients.add(Client(sock))
                         Log.i(TAG, "client connected: ${sock.inetAddress} (${clients.size} total)")
+
+                        thread(name = "androsid-read-${sock.port}", isDaemon = true) {
+                            try {
+                                val reader = java.io.BufferedReader(java.io.InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                                while (running) {
+                                    val line = reader.readLine() ?: break
+                                    onCommandReceived?.invoke(line)
+                                }
+                            } catch (e: Exception){
+                                // Connection dropped by client
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) {

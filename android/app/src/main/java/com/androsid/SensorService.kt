@@ -27,6 +27,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
+import android.os.BatteryManager
+
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
+
 /**
  * Owns every sensor and streams them out of a single socket on a single clock.
  *
@@ -65,10 +73,24 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     private var sensorThread: HandlerThread? = null
     private var loggedFirstFix = false
 
+    private var batteryReceiver: BroadcastReceiver? = null
+
+    private val vibrator: Vibrator by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else{
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(PORT)
+        server = StreamServer(PORT) { cmdJson -> 
+            handleCommand(cmdJson)
+        }
         server.start()
 
         startForeground(NOTIF_ID, buildNotification())
@@ -100,6 +122,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         startImu(Handler(thread.looper))
         startGps(thread.looper)
         startCamera()
+        startBattery(Handler(thread.looper))
     }
 
     override fun onDestroy() {
@@ -111,6 +134,10 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         } catch (_: SecurityException) {}
         // Both listeners are unregistered above, so no callback can be mid-flight.
         // quitSafely lets already-queued messages finish rather than dropping them.
+        batteryReceiver?.let {
+            try { unregisterReceiver(it) } catch (_: Exception) {}
+            batteryReceiver = null
+        }
         sensorThread?.quitSafely()
         sensorThread = null
         wakeLock?.takeIf { it.isHeld }?.release()
@@ -173,6 +200,79 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
     private fun hasPermission(p: String) =
         ContextCompat.checkSelfPermission(this, p) == PackageManager.PERMISSION_GRANTED
+
+    
+    private fun startBattery(handler: Handler) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+                val percentage = if (level >= 0 && scale > 0) level / scale.toFloat() else Float.NaN
+
+                val voltageMv = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
+                val voltage = if (voltageMv != -1) voltageMv / 1000.0f else Float.NaN
+
+                val tempTenths = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, -1)
+                val temperature = if (tempTenths != -1) tempTenths / 10.0f else Float.NaN
+
+                val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, BatteryManager.BATTERY_STATUS_UNKNOWN)
+                val health = intent.getIntExtra(BatteryManager.EXTRA_HEALTH, BatteryManager.BATTERY_HEALTH_UNKNOWN)
+                val present = intent.getBooleanExtra(BatteryManager.EXTRA_PRESENT, true)
+                val tech = intent.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY) ?: ""
+
+                val bm = getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
+                // BATTERY_PROPERTY_CURRENT_NOW retorna uA
+                val currentUa = bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) ?: 0
+                val current = if (currentUa != Int.MIN_VALUE && currentUa != 0) currentUa / 1_000_000.0f else Float.NaN
+
+                val t = SystemClock.elapsedRealtimeNanos() + bootToEpochNanos
+
+                server.broadcastJson(
+                    """{"s":"battery","t":$t,"voltage":$voltage,"temperature":$temperature,"current":$current,"percentage":$percentage,"status":$status,"health":$health,"present":$present,"tech":"$tech"}"""
+                )
+            }
+        }
+        batteryReceiver = receiver
+        registerReceiver(receiver, IntentFilter(Intent.ACTION_BATTERY_CHANGED), null, handler)
+    }
+
+    private fun handleCommand(rawJson: String) {
+        try {
+            val obj = org.json.JSONObject(rawJson)
+            when (obj.optString("cmd")) {
+                "torch" -> {
+                    val state = obj.optBoolean("state", false)
+                    camera?.setTorch(state)
+                }
+                "vibrate" -> {
+                    // Default vibration time of 300ms when left empty
+                    val duration = obj.optLong("duration_ms", 300L)
+                    val amplitude = obj.optInt("amplitude", 255)
+                    vibrate(duration)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "failed to parse command: $rawJson", e)
+        }
+    }
+
+    private fun vibrate(durationMs: Long, amplitude: Int = 255) {
+        if (!vibrator.hasVibrator()) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val amp = if (vibrator.hasAmplitudeControl()){
+                amplitude.coerceIn(1,255)
+            } else {
+                VibrationEffect.DEFAULT_AMPLITUDE
+            }
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(durationMs, amp)
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(durationMs)
+        }
+    }
 
     // -------------------------------------------------------------- callbacks
 
