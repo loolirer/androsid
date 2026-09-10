@@ -137,6 +137,11 @@ class MobileSensors(Node):
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     self.get_logger().info("Connected!")
+                    ok, msg = self.send_command_sync("ping", {}, timeout_sec=2.0)
+                    if ok:
+                        self.get_logger().info(f"Health ckeck: Bidirectional link OK (Android response: '{msg}')")
+                    else:
+                        self.get_logger().warn(f"Health ckeck: Bidirectional handshake failed: {msg}")
                     self._consume(sock)
 
             except OSError as exc:

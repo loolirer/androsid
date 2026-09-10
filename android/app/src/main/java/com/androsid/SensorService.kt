@@ -274,6 +274,10 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
             when (action) {
                 // Future additions will go here (such as torch, vibrate, etc.)
+                "ping" -> {
+                    success = true
+                    errMsg = "pong"
+                }
                 else -> {
                     errMsg = "Unknown action: $action"
                 }
