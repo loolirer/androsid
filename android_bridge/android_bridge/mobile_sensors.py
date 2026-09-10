@@ -103,6 +103,10 @@ class MobileSensors(Node):
 
         self._stop = threading.Event()
         self._sock = None
+        self._send_lock = threading.Lock()
+        self._cmd_id = 0
+        self._pending_acks = {}
+
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -168,6 +172,8 @@ class MobileSensors(Node):
                 self._on_battery(sample)
             elif kind == "frame":
                 self._on_frame(sample["t"], base64.b64decode(sample["d"]))
+            elif kind == "ack":
+                self._on_ack(sample)
 
     def _on_imu(self, sample):
         if self._last_accel is None:
@@ -277,6 +283,43 @@ class MobileSensors(Node):
         )
         self.pub_battery.publish(msg)
 
+    def send_command_sync(self, action: str, params: dict, timeout_sec: float = 2.0):
+        if self._sock is None:
+            return False, "Device not connected via TCP"
+
+        with self._send_lock:
+            self._cmd_id += 1
+            req_id = self._cmd_id
+
+        event = threading.Event()
+        ack_data = {}
+        self._pending_acks[req_id] = (event, ack_data)
+
+        payload = {"id": req_id, "action": action}
+        payload.update(params)
+        cmd_bytes = (json.dumps(payload) + "\n").encode("utf-8")
+
+        try:
+            with self._send_lock:
+                self._sock.sendall(cmd_bytes)
+        except OSError as exc:
+            self._pending_acks.pop(req_id, None)
+            return False, f"Failed to send command: {exc}"
+
+        if not event.wait(timeout=timeout_sec):
+            self._pending_acks.pop(req_id, None)
+            return False, f"Command '{action}' timed out after {timeout_sec}s without ACK"
+
+        return ack_data.get("success", False), ack_data.get("msg", "")
+
+    def _on_ack(self, sample):
+        req_id = sample.get("id")
+        pending = self._pending_acks.pop(req_id, None)
+        if pending:
+            event, data = pending
+            data["success"] = bool(sample.get("success", False))
+            data["msg"] = str(sample.get("msg", ""))
+            event.set()
 
 def main(args=None):
     rclpy.init(args=args)

@@ -60,7 +60,9 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(PORT)
+        server = StreamServer(PORT) {
+            rawCommand -> handleCommand(rawCommand)
+        }
         server.start()
 
         startForeground(NOTIF_ID, buildNotification())
@@ -256,5 +258,33 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             .setOngoing(true)
             .setContentIntent(tap)
             .build()
+    }
+    
+    // ----------------------------------------------------------- commands
+
+    @Synchronized
+    private fun handleCommand(cmdJson: String) {
+        try {
+            val json = org.json.JSONObject(cmdJson)
+            val id = json.optLong("id", -1L)
+            val action = json.optString("action", "")
+
+            var success = false
+            var errMsg = ""
+
+            when (action) {
+                // Future additions will go here (such as torch, vibrate, etc.)
+                else -> {
+                    errMsg = "Unknown action: $action"
+                }
+            }
+
+            if (id != -1L) {
+                val ackJson = """{"s":"ack","id":$id,"action":"$action","success":$success,"msg":"$errMsg"}"""
+                server.broadcast(ackJson)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling command", e)
+        }
     }
 }
