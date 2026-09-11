@@ -77,7 +77,7 @@ class CameraSource(
                     "rotationDegrees=${image.imageInfo.rotationDegrees}")
             }
 
-            if (!server.hasClients()) return
+            if (!server.isConnected()) return
 
             val nv21 = image.toNv21()
             val yuv = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
