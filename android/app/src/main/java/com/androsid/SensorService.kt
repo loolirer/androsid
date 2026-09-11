@@ -269,7 +269,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             val id = json.optLong("id", -1L)
             val action = json.optString("action", "")
 
-            var success = false
+            var ok = false
             var msg = "Unknown action: $action"
 
             when (action) {
