@@ -38,14 +38,9 @@ class StreamServer(
                         Log.i(TAG, "listening on 0.0.0.0:$port")
                         val sock = srv.accept()
                         sock.tcpNoDelay = true
-<<<<<<< HEAD
-                        client = Client(sock)
-                        Log.i(TAG, "client connected: ${sock.inetAddress}")
-=======
                         val client = Client(sock)
                         clients.add(client)
                         Log.i(TAG, "client connected: ${sock.inetAddress} (${clients.size} total)")
->>>>>>> 225d9aa (refactor)
 
                         thread(name="androsid-reader-${sock.port}", isDaemon = true) {
                             try {
