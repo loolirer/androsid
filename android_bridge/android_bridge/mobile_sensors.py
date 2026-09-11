@@ -313,8 +313,11 @@ class MobileSensors(Node):
 
         try:
             with self._send_lock:
-                self._sock.sendall(cmd_bytes)
-        except OSError as exc:
+                sock = self._sock
+                if sock is None:
+                    raise OSError("Socket disconnected")
+                sock.sendall(cmd_bytes)
+        except (OSError, AttributeError) as exc:
             self._pending_acks.pop(req_id, None)
             return False, f"Failed to send command: {exc}"
 

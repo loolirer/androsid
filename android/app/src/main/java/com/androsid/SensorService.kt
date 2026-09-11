@@ -270,22 +270,23 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             val action = json.optString("action", "")
 
             var success = false
-            var errMsg = ""
+            var msg = "Unknown action: $action"
 
             when (action) {
-                // Future additions will go here (such as torch, vibrate, etc.)
-                "ping" -> {
-                    success = true
-                    errMsg = "pong"
-                }
+
                 else -> {
-                    errMsg = "Unknown action: $action"
+                    // Defaults to ok = false with "Unknown action"
                 }
             }
 
             if (id != -1L) {
-                val ackJson = """{"s":"ack","id":$id,"action":"$action","success":$success,"msg":"$errMsg"}"""
-                server.broadcast(ackJson)
+                val ackObj = org.json.JSONObject().apply {
+                    put("s", "result")
+                    put("id", id)
+                    put("ok", ok)
+                    put("data", msg)
+                }
+                server.broadcast(ackObj.toString())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error handling command", e)
