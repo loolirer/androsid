@@ -105,7 +105,7 @@ class MobileSensors(Node):
         self._sock = None
         self._send_lock = threading.Lock()
         self._cmd_id = 0
-        self._pending_acks = {}
+        self._pending_results = {}
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -137,11 +137,6 @@ class MobileSensors(Node):
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     self.get_logger().info("Connected!")
-                    threading.Thread(
-                        target=self._check_bidirectional_link, 
-                        daemon=True
-                        ).start()
-                    
                     self._consume(sock)
 
             except OSError as exc:
@@ -152,13 +147,6 @@ class MobileSensors(Node):
 
             finally:
                 self._sock = None
-
-    def _check_bidirectional_link(self):
-        ok, msg = self.send_command_sync("ping", {}, timeout_sec=2.0)
-        if ok:
-            self.get_logger().info(f"Health ckeck: Bidirectional link OK (Android response: '{msg}')")
-        else:
-            self.get_logger().warn(f"Health ckeck: Bidirectional handshake failed: {msg}")
 
     def _consume(self, sock):
         stream = sock.makefile("r", encoding="utf-8", newline="\n")
@@ -184,8 +172,8 @@ class MobileSensors(Node):
                 self._on_battery(sample)
             elif kind == "frame":
                 self._on_frame(sample["t"], base64.b64decode(sample["d"]))
-            elif kind == "ack":
-                self._on_ack(sample)
+            elif kind == "result":
+                self._on_result(sample)
 
     def _on_imu(self, sample):
         if self._last_accel is None:
@@ -295,7 +283,10 @@ class MobileSensors(Node):
         )
         self.pub_battery.publish(msg)
 
-    def send_command_sync(self, action: str, params: dict, timeout_sec: float = 2.0):
+    def send_command_sync(self, action: str, params: dict = None, timeout_sec: float = 2.0):
+        if params is None:
+            params = {}
+
         if self._sock is None:
             return False, "Device not connected via TCP"
 
@@ -304,8 +295,8 @@ class MobileSensors(Node):
             req_id = self._cmd_id
 
         event = threading.Event()
-        ack_data = {}
-        self._pending_acks[req_id] = (event, ack_data)
+        result_data = {}
+        self._pending_results[req_id] = (event, result_data)
 
         payload = {"id": req_id, "action": action}
         payload.update(params)
@@ -318,23 +309,25 @@ class MobileSensors(Node):
                     raise OSError("Socket disconnected")
                 sock.sendall(cmd_bytes)
         except (OSError, AttributeError) as exc:
-            self._pending_acks.pop(req_id, None)
+            self._pending_results.pop(req_id, None)
             return False, f"Failed to send command: {exc}"
 
         if not event.wait(timeout=timeout_sec):
-            self._pending_acks.pop(req_id, None)
-            return False, f"Command '{action}' timed out after {timeout_sec}s without ACK"
+            self._pending_results.pop(req_id, None)
+            return False, f"Command '{action}' timed out after {timeout_sec}s without response"
 
-        return ack_data.get("success", False), ack_data.get("msg", "")
+        return result_data.get("ok", False), result_data.get("data", "")
 
-    def _on_ack(self, sample):
+    def _on_result(self, sample: dict):
         req_id = sample.get("id")
-        pending = self._pending_acks.pop(req_id, None)
-        if pending:
-            event, data = pending
-            data["success"] = bool(sample.get("success", False))
-            data["msg"] = str(sample.get("msg", ""))
-            event.set()
+        pending = self._pending_results.pop(req_id, None)
+        if pending is None:
+            return
+        
+        event, result_data = pending
+        result_data["ok"] = bool(sample.get("ok", False))
+        result_data["data"] = str(sample.get("data", ""))
+        event.set()
 
 def main(args=None):
     rclpy.init(args=args)
