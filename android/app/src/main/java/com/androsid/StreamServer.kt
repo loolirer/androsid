@@ -4,10 +4,12 @@ import android.util.Log
 import java.io.BufferedOutputStream
 import java.net.ServerSocket
 import java.net.Socket
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
-class StreamServer(private val port: Int) {
+class StreamServer(
+    private val port: Int,
+    private val idleTimeoutMs: Long = 1000,
+) {
 
     companion object {
         private const val TAG = "StreamServer"
@@ -15,9 +17,10 @@ class StreamServer(private val port: Int) {
 
     private class Client(val socket: Socket) {
         val out = BufferedOutputStream(socket.getOutputStream(), 64 * 1024)
+        @Volatile var lastSeenAt: Long = System.currentTimeMillis()
     }
 
-    private val clients = CopyOnWriteArrayList<Client>()
+    @Volatile private var client: Client? = null
     private var server: ServerSocket? = null
     @Volatile private var running = false
 
@@ -25,18 +28,34 @@ class StreamServer(private val port: Int) {
         if (running) return
         running = true
         thread(name = "androsid-accept", isDaemon = true) {
-            try {
-                ServerSocket(port).also { server = it }.use { srv ->
-                    Log.i(TAG, "listening on 0.0.0.0:$port")
-                    while (running) {
+            while (running) {
+                try {
+                    ServerSocket(port).use { srv ->
+                        server = srv
+                        Log.i(TAG, "listening on 0.0.0.0:$port")
                         val sock = srv.accept()
                         sock.tcpNoDelay = true
-                        clients.add(Client(sock))
-                        Log.i(TAG, "client connected: ${sock.inetAddress} (${clients.size} total)")
+                        client = Client(sock)
+                        Log.i(TAG, "client connected: ${sock.inetAddress}")
                     }
+
+                    while (running && client != null) Thread.sleep(idleTimeoutMs)
+                } catch (e: Exception) {
+                    if (running) Log.e(TAG, "accept loop died", e)
                 }
-            } catch (e: Exception) {
-                if (running) Log.e(TAG, "accept loop died", e)
+            }
+        }
+
+        thread(name = "androsid-watchdog", isDaemon = true) {
+            while (running) {
+                Thread.sleep(idleTimeoutMs)
+                val c = client ?: continue
+
+                val idleMs = System.currentTimeMillis() - c.lastSeenAt
+                if (idleMs > idleTimeoutMs) {
+                    Log.w(TAG, "client timed out after ${idleMs}ms idle; disconnecting")
+                    dropClient(c)
+                }
             }
         }
     }
@@ -44,31 +63,37 @@ class StreamServer(private val port: Int) {
     fun stop() {
         running = false
         try { server?.close() } catch (_: Exception) {}
-        clients.forEach { try { it.socket.close() } catch (_: Exception) {} }
-        clients.clear()
+        client?.let { try { it.socket.close() } catch (_: Exception) {} }
+        client = null
     }
 
-    fun hasClients(): Boolean = clients.isNotEmpty()
-
-    fun clientCount(): Int = clients.size
+    fun isConnected(): Boolean = client != null
 
     fun broadcast(json: String) =
         broadcastLine((json + "\n").toByteArray(Charsets.UTF_8))
 
     fun broadcastLine(line: ByteArray) {
-        if (clients.isEmpty()) return
+        val c = client ?: return
+        writeTo(c, line)
+    }
 
-        for (client in clients) {
-            try {
-                synchronized(client) {
-                    client.out.write(line)
-                    client.out.flush()
-                }
-            } catch (e: Exception) {
-                Log.i(TAG, "client dropped: ${e.message}")
-                clients.remove(client)
-                try { client.socket.close() } catch (_: Exception) {}
+    private fun writeTo(c: Client, line: ByteArray) {
+        try {
+            synchronized(c) {
+                c.out.write(line)
+                c.out.flush()
             }
+            c.lastSeenAt = System.currentTimeMillis()
+        } catch (e: Exception) {
+            Log.i(TAG, "client dropped: ${e.message}")
+            dropClient(c)
         }
+    }
+
+    private fun dropClient(c: Client) {
+        synchronized(this) {
+            if (client === c) client = null
+        }
+        try { c.socket.close() } catch (_: Exception) {}
     }
 }
