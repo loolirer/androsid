@@ -28,26 +28,21 @@ class StreamServer(
         if (running) return
         running = true
         thread(name = "androsid-accept", isDaemon = true) {
-            try {
-                ServerSocket(port).also { server = it }.use { srv ->
-                    Log.i(TAG, "listening on 0.0.0.0:$port")
-                    while (running) {
+            while (running) {
+                try {
+                    ServerSocket(port).use { srv ->
+                        server = srv
+                        Log.i(TAG, "listening on 0.0.0.0:$port")
                         val sock = srv.accept()
                         sock.tcpNoDelay = true
-
-                        synchronized(this) {
-                            if (client != null) {
-                                Log.i(TAG, "rejecting ${sock.inetAddress}: a client is already connected")
-                                try { sock.close() } catch (_: Exception) {}
-                            } else {
-                                client = Client(sock)
-                                Log.i(TAG, "client connected: ${sock.inetAddress}")
-                            }
-                        }
+                        client = Client(sock)
+                        Log.i(TAG, "client connected: ${sock.inetAddress}")
                     }
+
+                    while (running && client != null) Thread.sleep(idleTimeoutMs)
+                } catch (e: Exception) {
+                    if (running) Log.e(TAG, "accept loop died", e)
                 }
-            } catch (e: Exception) {
-                if (running) Log.e(TAG, "accept loop died", e)
             }
         }
 
