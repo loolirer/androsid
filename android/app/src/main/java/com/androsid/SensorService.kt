@@ -195,6 +195,8 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             when (lensFacingOf(info)) {
                 CameraSelector.LENS_FACING_FRONT -> "front_${frontCount++}"
                 CameraSelector.LENS_FACING_BACK -> "rear_${rearCount++}"
+
+                // When hardware fails to report any of the cameras
                 else -> "camera_0"
             }
         }
