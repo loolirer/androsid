@@ -31,44 +31,49 @@ class StreamServer(
         if (running) return
         running = true
         thread(name = "androsid-accept", isDaemon = true) {
-            try {
-                val srv = ServerSocket(port)
-                server = srv
-                Log.i(TAG, "listening on 0.0.0.0:$port")
+            while (running) {
+                try {
+                    ServerSocket(port).use {srv -> 
+                        server = srv
+                        Log.i(TAG, "listening on 0.0.0.0:$port")
+                        
+                        val sock = srv.accept()
+                        sock.tcpNoDelay = true
 
-                while (running && !srv.isClosed) {
-                    val sock = srv.accept()
-                    sock.tcpNoDelay = true
+                        val currentClient = Client(sock)
+                        this.client = currentClient
+                        Log.i(TAG, "client connected: ${sock.inetAddress}")
 
-                    client?.let { dropClient(it) }
-
-                    val currentClient = Client(sock)
-                    this.client = currentClient
-                    Log.i(TAG, "client connected: ${sock.inetAddress}")
-
-                    thread(name="androsid-reader-${sock.port}", isDaemon = true) {
-                        try {
-                            val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
-                            while (running && !sock.isClosed) {
-                                val line = reader.readLine() ?: break
-                                if (line.isNotBlank()) {
-                                    currentClient.lastSeenAt = System.currentTimeMillis()
-                                    onCommandReceived?.invoke(line)
+                        thread(name="androsid-reader-${sock.port}", isDaemon = true) {
+                            try {
+                                val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                                while (running && !sock.isClosed) {
+                                    val line = reader.readLine() ?: break
+                                    if (line.isNotBlank()) {
+                                        currentClient.lastSeenAt = System.currentTimeMillis()
+                                        onCommandReceived?.invoke(line)
+                                    }
                                 }
+                            } catch (e: Exception) {
+                                if (running) { 
+                                    Log.i(TAG, "Client read ended: ${e.message}") 
+                                }
+                            } finally {
+                                dropClient(currentClient)
                             }
-                        } catch (e: Exception) {
-                            if (running) { 
-                                Log.i(TAG, "Client read ended: ${e.message}") 
-                            }
-                        } finally {
-                            dropClient(currentClient)
                         }
                     }
+
+                    while (running && client != null) {
+                        Thread.sleep(idleTimeoutMs)
+                    }
+                } catch (e: Exception) {
+                    if (running) Log.e(TAG, "accept loop died", e)
                 }
-            } catch (e: Exception) {
-                if (running) Log.e(TAG, "accept loop died", e)
             }
         }
+    } 
+
 
         thread(name = "androsid-watchdog", isDaemon = true) {
             while (running) {
