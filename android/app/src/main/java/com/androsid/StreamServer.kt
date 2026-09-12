@@ -68,8 +68,8 @@ class StreamServer(
                     if (running) Log.e(TAG, "accept loop died", e)
                 }
             }
-        } 
-        
+        }
+
         thread(name = "androsid-watchdog", isDaemon = true) {
             while (running) {
                 Thread.sleep(idleTimeoutMs)
