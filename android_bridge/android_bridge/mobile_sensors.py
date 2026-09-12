@@ -28,21 +28,21 @@ def to_ros_time(nanos):
 
 
 ANDROID_STATUS_TO_ROS = {
-    1: BatteryState.POWER_SUPPLY_STATUS_UNKNOWN,  # BATTERY_STATUS_UNKNOWN
-    2: BatteryState.POWER_SUPPLY_STATUS_CHARGING,  # BATTERY_STATUS_CHARGING
-    3: BatteryState.POWER_SUPPLY_STATUS_DISCHARGING,  # BATTERY_STATUS_DISCHARGING
-    4: BatteryState.POWER_SUPPLY_STATUS_NOT_CHARGING,  # BATTERY_STATUS_NOT_CHARGING
-    5: BatteryState.POWER_SUPPLY_STATUS_FULL,  # BATTERY_STATUS_FULL
+    1: BatteryState.POWER_SUPPLY_STATUS_UNKNOWN,
+    2: BatteryState.POWER_SUPPLY_STATUS_CHARGING,
+    3: BatteryState.POWER_SUPPLY_STATUS_DISCHARGING,
+    4: BatteryState.POWER_SUPPLY_STATUS_NOT_CHARGING,
+    5: BatteryState.POWER_SUPPLY_STATUS_FULL,
 }
 
 ANDROID_HEALTH_TO_ROS = {
-    1: BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN,  # BATTERY_HEALTH_UNKNOWN
-    2: BatteryState.POWER_SUPPLY_HEALTH_GOOD,  # BATTERY_HEALTH_GOOD
-    3: BatteryState.POWER_SUPPLY_HEALTH_OVERHEAT,  # BATTERY_HEALTH_OVERHEAT
-    4: BatteryState.POWER_SUPPLY_HEALTH_DEAD,  # BATTERY_HEALTH_DEAD
-    5: BatteryState.POWER_SUPPLY_HEALTH_OVERVOLTAGE,  # BATTERY_HEALTH_OVERVOLTAGE
-    6: BatteryState.POWER_SUPPLY_HEALTH_UNSPEC_FAILURE,  # BATTERY_HEALTH_UNSPECIFIED_FAILURE
-    7: BatteryState.POWER_SUPPLY_HEALTH_COLD,  # BATTERY_HEALTH_COLD
+    1: BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN,
+    2: BatteryState.POWER_SUPPLY_HEALTH_GOOD,
+    3: BatteryState.POWER_SUPPLY_HEALTH_OVERHEAT,
+    4: BatteryState.POWER_SUPPLY_HEALTH_DEAD,
+    5: BatteryState.POWER_SUPPLY_HEALTH_OVERVOLTAGE,
+    6: BatteryState.POWER_SUPPLY_HEALTH_UNSPEC_FAILURE,
+    7: BatteryState.POWER_SUPPLY_HEALTH_COLD,
 }
 
 ANDROID_TECH_TO_ROS = {
@@ -63,13 +63,11 @@ class MobileSensors(Node):
         self.declare_parameter("port", 9870)
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
-        self.declare_parameter("camera_frame", "camera_optical_frame")
 
         self.host = self.get_parameter("host").value
         self.port = self.get_parameter("port").value
         self.imu_frame = self.get_parameter("imu_frame").value
         self.gps_frame = self.get_parameter("gps_frame").value
-        self.camera_frame = self.get_parameter("camera_frame").value
 
         qos_overrides = QoSOverridingOptions(
             policy_kinds=(
@@ -88,15 +86,13 @@ class MobileSensors(Node):
         self.pub_gps = self.create_publisher(
             NavSatFix, "gps/fix", 10, qos_overriding_options=qos_overrides
         )
-        self.pub_img = self.create_publisher(
-            CompressedImage,
-            "camera/image_raw/compressed",
-            10,
-            qos_overriding_options=qos_overrides,
-        )
         self.pub_battery = self.create_publisher(
             BatteryState, "battery_state", 10, qos_overriding_options=qos_overrides
         )
+
+        # One image publisher per camera, created on demand the first time a
+        # frame arrives tagged with that camera's name ("c" field).
+        self.pub_img = {}
 
         self._last_accel = None
         self._logged_provider = False
@@ -133,6 +129,11 @@ class MobileSensors(Node):
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     self.get_logger().info("Connected!")
+
+                    # Fresh connection: forget publishers from a previous run, in
+                    # case the set of cameras on the device changed.
+                    self.pub_img.clear()
+
                     self._consume(sock)
 
             except OSError as exc:
@@ -167,7 +168,8 @@ class MobileSensors(Node):
             elif kind == "battery":
                 self._on_battery(sample)
             elif kind == "frame":
-                self._on_frame(sample["t"], base64.b64decode(sample["d"]))
+                camera_name = sample.get("c", "default")
+                self._on_frame(sample["t"], camera_name, base64.b64decode(sample["d"]))
 
     def _on_imu(self, sample):
         if self._last_accel is None:
@@ -240,13 +242,32 @@ class MobileSensors(Node):
         msg.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
         self.pub_gps.publish(msg)
 
-    def _on_frame(self, stamp_nanos, jpeg):
+    def _on_frame(self, stamp_nanos, camera_name, jpeg):
+        pub = self.pub_img.get(camera_name)
+        if pub is None:
+            qos_overrides = QoSOverridingOptions(
+                policy_kinds=(
+                    QoSPolicyKind.RELIABILITY,
+                    QoSPolicyKind.DURABILITY,
+                    QoSPolicyKind.HISTORY,
+                    QoSPolicyKind.DEPTH,
+                )
+            )
+            pub = self.create_publisher(
+                CompressedImage,
+                f"camera_{camera_name}/image_raw/compressed",
+                10,
+                qos_overriding_options=qos_overrides,
+            )
+            self.pub_img[camera_name] = pub
+            self.get_logger().info(f"registered camera '{camera_name}'")
+
         msg = CompressedImage()
         msg.header.stamp = to_ros_time(stamp_nanos)
-        msg.header.frame_id = self.camera_frame
+        msg.header.frame_id = f"camera_{camera_name}_optical_frame"
         msg.format = "jpeg"
         msg.data = jpeg
-        self.pub_img.publish(msg)
+        pub.publish(msg)
 
     def _on_battery(self, sample):
         msg = BatteryState()
