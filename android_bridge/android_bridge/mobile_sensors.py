@@ -63,15 +63,13 @@ class MobileSensors(Node):
         self.declare_parameter("port", 9870)
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
-        self.declare_parameter("camera_frame", "camera_optical_frame")
 
         self.host = self.get_parameter("host").value
         self.port = self.get_parameter("port").value
         self.imu_frame = self.get_parameter("imu_frame").value
         self.gps_frame = self.get_parameter("gps_frame").value
-        self.camera_frame = self.get_parameter("camera_frame").value
 
-        qos_overrides = QoSOverridingOptions(
+        self.qos_overrides = QoSOverridingOptions(
             policy_kinds=(
                 QoSPolicyKind.RELIABILITY,
                 QoSPolicyKind.DURABILITY,
@@ -80,23 +78,19 @@ class MobileSensors(Node):
             )
         )
         self.pub_imu = self.create_publisher(
-            Imu, "imu/data_raw", 10, qos_overriding_options=qos_overrides
+            Imu, "imu/data_raw", 10, qos_overriding_options=self.qos_overrides
         )
         self.pub_mag = self.create_publisher(
-            MagneticField, "imu/mag", 10, qos_overriding_options=qos_overrides
+            MagneticField, "imu/mag", 10, qos_overriding_options=self.qos_overrides
         )
         self.pub_gps = self.create_publisher(
-            NavSatFix, "gps/fix", 10, qos_overriding_options=qos_overrides
-        )
-        self.pub_img = self.create_publisher(
-            CompressedImage,
-            "camera/image_raw/compressed",
-            10,
-            qos_overriding_options=qos_overrides,
+            NavSatFix, "gps/fix", 10, qos_overriding_options=self.qos_overrides
         )
         self.pub_battery = self.create_publisher(
-            BatteryState, "battery_state", 10, qos_overriding_options=qos_overrides
+            BatteryState, "battery_state", 10, qos_overriding_options=self.qos_overrides
         )
+
+        self.pub_img = {}
 
         self._last_accel = None
         self._logged_provider = False
@@ -133,6 +127,9 @@ class MobileSensors(Node):
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     self.get_logger().info("Connected!")
+
+                    self.pub_img.clear()
+
                     self._consume(sock)
 
             except OSError as exc:
@@ -167,7 +164,7 @@ class MobileSensors(Node):
             elif kind == "battery":
                 self._on_battery(sample)
             elif kind == "frame":
-                self._on_frame(sample["t"], base64.b64decode(sample["d"]))
+                self._on_frame(sample["t"], sample.get("c", "default"), base64.b64decode(sample["d"]))
 
     def _on_imu(self, sample):
         if self._last_accel is None:
@@ -240,13 +237,23 @@ class MobileSensors(Node):
         msg.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
         self.pub_gps.publish(msg)
 
-    def _on_frame(self, stamp_nanos, jpeg):
+    def _on_frame(self, stamp_nanos, camera_name, jpeg):
+        pub = self.pub_img.get(camera_name)
+        if pub is None:
+            pub = self.create_publisher(
+                CompressedImage,
+                f"camera/{camera_name}/image_raw/compressed",
+                10,
+                qos_overriding_options=self.qos_overrides,
+            )
+            self.pub_img[camera_name] = pub
+
         msg = CompressedImage()
         msg.header.stamp = to_ros_time(stamp_nanos)
-        msg.header.frame_id = self.camera_frame
+        msg.header.frame_id = f"camera_{camera_name}_optical_frame"
         msg.format = "jpeg"
         msg.data = jpeg
-        self.pub_img.publish(msg)
+        pub.publish(msg)
 
     def _on_battery(self, sample):
         msg = BatteryState()

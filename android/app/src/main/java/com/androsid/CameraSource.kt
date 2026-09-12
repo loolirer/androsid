@@ -1,79 +1,50 @@
 package com.androsid
 
-import android.content.Context
 import android.graphics.ImageFormat
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.util.Base64
 import android.util.Log
-import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class CameraSource(
-    private val context: Context,
-    private val owner: LifecycleOwner,
     private val server: StreamServer,
-    private val jpegQuality: Int = 70,
-    private val lensFacing: Int = CameraSelector.LENS_FACING_BACK
+    private val cameraName: String,
+    private val jpegQuality: Int = 70
 ) {
 
     companion object {
         private const val TAG = "CameraSource"
 
-        private val FRAME_PREFIX = "{\"s\":\"frame\",\"t\":".toByteArray(Charsets.US_ASCII)
-        private val FRAME_MID = ",\"d\":\"".toByteArray(Charsets.US_ASCII)
+        private val FRAME_MID = "\",\"t\":".toByteArray(Charsets.US_ASCII)
+        private val FRAME_DATA = ",\"d\":\"".toByteArray(Charsets.US_ASCII)
         private val FRAME_SUFFIX = "\"}\n".toByteArray(Charsets.US_ASCII)
     }
 
-    private var executor: ExecutorService? = null
-    private var provider: ProcessCameraProvider? = null
+    private val framePrefix =
+        "{\"s\":\"frame\",\"c\":\"$cameraName".toByteArray(Charsets.US_ASCII)
+
+    private val executor: ExecutorService = Executors.newSingleThreadExecutor()
     private var loggedRotation = false
 
-    fun start() {
-        val exec = Executors.newSingleThreadExecutor().also { executor = it }
-        val future = ProcessCameraProvider.getInstance(context)
-
-        future.addListener({
-            try {
-                val cameraProvider = future.get().also { provider = it }
-
-                val analysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .build()
-
-                analysis.setAnalyzer(exec) { image -> handleFrame(image) }
-
-                val selector = CameraSelector.Builder()
-                    .requireLensFacing(lensFacing)
-                    .build()
-
-                cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(owner, selector, analysis)
-                Log.i(TAG, "camera bound")
-            } catch (e: Exception) {
-                Log.e(TAG, "failed to bind camera", e)
-            }
-        }, ContextCompat.getMainExecutor(context))
-    }
+    val imageAnalysis: ImageAnalysis = ImageAnalysis.Builder()
+        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+        .build()
+        .also { it.setAnalyzer(executor) { image -> handleFrame(image) } }
 
     fun stop() {
-        try { provider?.unbindAll() } catch (_: Exception) {}
-        executor?.shutdown()
-        executor = null
+        executor.shutdown()
     }
 
     private fun handleFrame(image: ImageProxy) {
         try {
             if (!loggedRotation) {
                 loggedRotation = true
-                Log.i(TAG, "first frame: ${image.width}x${image.height}, " +
+                Log.i(TAG, "camera '$cameraName' first frame: ${image.width}x${image.height}, " +
                     "rotationDegrees=${image.imageInfo.rotationDegrees}")
             }
 
@@ -91,18 +62,20 @@ class CameraSource(
             val b64 = Base64.encode(jpeg, Base64.NO_WRAP)
 
             val line = ByteArrayOutputStream(
-                FRAME_PREFIX.size + stampBytes.size + FRAME_MID.size + b64.size + FRAME_SUFFIX.size
+                framePrefix.size + FRAME_MID.size + stampBytes.size +
+                    FRAME_DATA.size + b64.size + FRAME_SUFFIX.size
             ).apply {
-                write(FRAME_PREFIX)
-                write(stampBytes)
+                write(framePrefix)
                 write(FRAME_MID)
+                write(stampBytes)
+                write(FRAME_DATA)
                 write(b64)
                 write(FRAME_SUFFIX)
             }.toByteArray()
 
             server.broadcastLine(line)
         } catch (e: Exception) {
-            Log.e(TAG, "frame encode failed", e)
+            Log.e(TAG, "frame encode failed for camera '$cameraName'", e)
         } finally {
             image.close()
         }

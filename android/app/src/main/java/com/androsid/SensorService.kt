@@ -23,6 +23,14 @@ import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.CameraInfo
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ConcurrentCamera
+import androidx.camera.core.UseCaseGroup
+import androidx.camera.lifecycle.ProcessCameraProvider
+import android.hardware.camera2.CameraCharacteristics
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
@@ -49,7 +57,8 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
     private lateinit var server: StreamServer
     private lateinit var sensorManager: SensorManager
-    private var camera: CameraSource? = null
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var cameras: MutableList<CameraSource> = mutableListOf()
     private var wakeLock: PowerManager.WakeLock? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var sensorThread: HandlerThread? = null
@@ -83,13 +92,15 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
         startImu(Handler(thread.looper))
         startGps(thread.looper)
-        startCamera()
+        startCameras()
         startBattery(Handler(thread.looper))
     }
 
     override fun onDestroy() {
         sensorManager.unregisterListener(this)
-        camera?.stop()
+        cameras.forEach { it.stop() }
+        cameras.clear()
+        cameraProvider?.unbindAll()
         try {
             (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
                 .removeUpdates(this)
@@ -147,12 +158,96 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         }
     }
 
-    private fun startCamera() {
+    private fun startCameras() {
         if (!hasPermission(Manifest.permission.CAMERA)) {
-            Log.w(TAG, "camera permission not granted, camera disabled")
+            Log.w(TAG, "camera permission not granted, cameras disabled")
             return
         }
-        camera = CameraSource(this, this, server).also { it.start() }
+
+        val future = ProcessCameraProvider.getInstance(this)
+        future.addListener({
+            try {
+                val provider = future.get().also { cameraProvider = it }
+
+                // CameraX supports binding at most 2 cameras concurrently
+                // https://developer.android.com/reference/androidx/camera/core/ConcurrentCamera
+                val combos = provider.availableConcurrentCameraInfos
+
+                if (combos.isNotEmpty()) {
+                    bindConcurrentCombo(provider, combos[0])
+                } else {
+                    Log.w(TAG, "device does not support concurrent camera streaming, " +
+                        "falling back to a single camera")
+                    bindSingleCamera(provider)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "failed to start cameras", e)
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindConcurrentCombo(provider: ProcessCameraProvider, combo: List<CameraInfo>) {
+        Log.i(TAG, "using first reported combo: ${combo.size} camera(s)")
+
+        var frontCount = 0
+        var rearCount = 0
+        val names = combo.map { info ->
+            when (lensFacingOf(info)) {
+                CameraSelector.LENS_FACING_FRONT -> "front_${frontCount++}"
+                CameraSelector.LENS_FACING_BACK -> "rear_${rearCount++}"
+
+                // When hardware fails to report any of the cameras
+                else -> "camera_0"
+            }
+        }
+
+        cameras = combo.mapIndexed { index, _ -> CameraSource(server, names[index]) }.toMutableList()
+
+        val singleConfigs = combo.mapIndexed { index, info ->
+            ConcurrentCamera.SingleCameraConfig(
+                info.cameraSelector,
+                UseCaseGroup.Builder().addUseCase(cameras[index].imageAnalysis).build(),
+                this
+            )
+        }
+
+        provider.bindToLifecycle(singleConfigs)
+        Log.i(TAG, "cameras bound: $names")
+    }
+
+    private fun bindSingleCamera(provider: ProcessCameraProvider) {
+        val backSelector = CameraSelector.Builder()
+            .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+            .build()
+        val frontSelector = CameraSelector.Builder()
+            .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+            .build()
+
+        val (selector, name) = when {
+            provider.hasCamera(backSelector) -> backSelector to "rear_0"
+            provider.hasCamera(frontSelector) -> frontSelector to "front_0"
+            else -> {
+                Log.w(TAG, "no usable camera found on this device, camera streaming disabled")
+                return
+            }
+        }
+
+        val source = CameraSource(server, name)
+        cameras = mutableListOf(source)
+
+        provider.bindToLifecycle(this, selector, source.imageAnalysis)
+        Log.i(TAG, "camera bound: $name")
+    }
+
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun lensFacingOf(info: CameraInfo): Int? {
+        return try {
+            Camera2CameraInfo.from(info)
+                .getCameraCharacteristic(CameraCharacteristics.LENS_FACING)
+        } catch (e: Exception) {
+            Log.w(TAG, "could not read lens facing", e)
+            null
+        }
     }
 
     private fun hasPermission(p: String) =

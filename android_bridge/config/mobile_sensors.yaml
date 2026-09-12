@@ -19,12 +19,18 @@
           durability: volatile
           history: keep_last
           depth: 5
-      /camera/image_raw/compressed:
-        publisher:
-          reliability: best_effort
-          durability: volatile
-          history: keep_last
-          depth: 5
+      /camera/front_0/image_raw/compressed:
+      publisher:
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
+      /camera/rear_0/image_raw/compressed:
+      publisher:
+        reliability: best_effort
+        durability: volatile
+        history: keep_last
+        depth: 5
       /battery_state:
         publisher:
           reliability: reliable
