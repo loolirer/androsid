@@ -69,6 +69,7 @@ class StreamServer(
                 }
             }
         } 
+        
         thread(name = "androsid-watchdog", isDaemon = true) {
             while (running) {
                 Thread.sleep(idleTimeoutMs)
