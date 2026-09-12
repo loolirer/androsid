@@ -10,7 +10,7 @@ import kotlin.concurrent.thread
 
 class StreamServer(
     private val port: Int,
-    private val idleTimeoutMs: Long = 10000L,
+    private val idleTimeoutMs: Long = 1000L,
     private val onCommandReceived: ((String) -> Unit)? = null
 ) {
 
@@ -33,10 +33,9 @@ class StreamServer(
         thread(name = "androsid-accept", isDaemon = true) {
             while (running) {
                 try {
-                    ServerSocket(port).use {srv -> 
+                    ServerSocket(port).use { srv -> 
                         server = srv
-                        Log.i(TAG, "listening on 0.0.0.0:$port")
-                        
+                        Log.i(TAG, "listening on 0.0.0.0:$port")                        
                         val sock = srv.accept()
                         sock.tcpNoDelay = true
 
@@ -64,9 +63,7 @@ class StreamServer(
                         }
                     }
 
-                    while (running && client != null) {
-                        Thread.sleep(idleTimeoutMs)
-                    }
+                    while (running && client != null) Thread.sleep(idleTimeoutMs)
                 } catch (e: Exception) {
                     if (running) Log.e(TAG, "accept loop died", e)
                 }

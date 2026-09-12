@@ -137,10 +137,10 @@ class MobileSensors(Node):
                     self.get_logger().info("Connected!")
                     self._consume(sock)
 
-            except OSError as exc:
+            except OSError as e:
                 if self._stop.is_set():
                     break
-                self.get_logger().warn(f"Connection failed: {exc}; retrying in 2s")
+                self.get_logger().warn(f"Connection failed: {e}; retrying in 2s")
                 self._stop.wait(2.0)
 
             finally:
@@ -279,7 +279,7 @@ class MobileSensors(Node):
         )
         self.pub_battery.publish(msg)
 
-    def send_command(self, action: str, params: dict = None) -> bool:
+    def send_command(self, cmd: str, params: dict = None) -> bool:
         if params is None:
             params = {}
 
@@ -287,7 +287,7 @@ class MobileSensors(Node):
             self.get_logger().warn("Cannot send command: TCP socket is not connected")
             return False
 
-        payload = {"action": action}
+        payload = {"cmd": cmd}
         payload.update(params)
         cmd_bytes = (json.dumps(payload) + "\n").encode("utf-8")
 
@@ -299,7 +299,7 @@ class MobileSensors(Node):
                 sock.sendall(cmd_bytes)
             return True
         except (OSError, AttributeError) as exc:
-            self.get_logger().error(f"Failed to send command '{action}': {exc}")
+            self.get_logger().error(f"Failed to send command '{cmd}': {exc}")
             return False
 
 def main(args=None):

@@ -262,16 +262,15 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     
     // ----------------------------------------------------------- commands
 
-    @Synchronized
     private fun handleCommand(cmdJson: String) {
         try {
             val json = org.json.JSONObject(cmdJson)
-            val action = json.optString("action", "")
+            val cmd = json.optString("cmd", "")
 
-            when (action) {
+            when (cmd) {
 
                 else -> {
-                    Log.w(TAG, "Unknown or unhandled action received: $action")
+                    Log.w(TAG, "Unknown or unhandled command received: $cmd")
                 }
             }
         } catch (e: Exception) {
