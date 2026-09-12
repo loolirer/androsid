@@ -10,7 +10,7 @@ import kotlin.concurrent.thread
 
 class StreamServer(
     private val port: Int,
-    private val idleTimeoutMs: Long = 1000,
+    private val idleTimeoutMs: Long = 10000L,
     private val onCommandReceived: ((String) -> Unit)? = null
 ) {
 
@@ -31,40 +31,42 @@ class StreamServer(
         if (running) return
         running = true
         thread(name = "androsid-accept", isDaemon = true) {
-            while (running) {
-                try {
-                    ServerSocket(port).use { srv ->
-                        server = srv
-                        Log.i(TAG, "listening on 0.0.0.0:$port")
-                        val sock = srv.accept()
-                        sock.tcpNoDelay = true
-                        val currentClient = Client(sock)
-                        client = currentClient
-                        Log.i(TAG, "client connected: ${sock.inetAddress}")
+            try {
+                val srv = ServerSocket(port)
+                server = srv
+                Log.i(TAG, "listening on 0.0.0.0:$port")
 
-                        thread(name="androsid-reader-${sock.port}", isDaemon = true) {
-                            try {
-                                val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
-                                while (running && !sock.isClosed) {
-                                    val line = reader.readLine() ?: break
-                                    if (line.isNotBlank()) {
-                                        onCommandReceived?.invoke(line)
-                                    }
+                while (running && !srv.isClosed) {
+                    val sock = srv.accept()
+                    sock.tcpNoDelay = true
+
+                    client?.let { dropClient(it) }
+
+                    val currentClient = Client(sock)
+                    this.client = currentClient
+                    Log.i(TAG, "client connected: ${sock.inetAddress}")
+
+                    thread(name="androsid-reader-${sock.port}", isDaemon = true) {
+                        try {
+                            val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                            while (running && !sock.isClosed) {
+                                val line = reader.readLine() ?: break
+                                if (line.isNotBlank()) {
+                                    currentClient.lastSeenAt = System.currentTimeMillis()
+                                    onCommandReceived?.invoke(line)
                                 }
-                            } catch (e: Exception) {
-                                if (running) { 
-                                    Log.i(TAG, "Client read ended: ${e.message}") 
-                                }
-                            } finally {
-                                dropClient(currentClient)
                             }
+                        } catch (e: Exception) {
+                            if (running) { 
+                                Log.i(TAG, "Client read ended: ${e.message}") 
+                            }
+                        } finally {
+                            dropClient(currentClient)
                         }
                     }
-
-                    while (running && client != null) Thread.sleep(idleTimeoutMs)
-                } catch (e: Exception) {
-                    if (running) Log.e(TAG, "accept loop died", e)
                 }
+            } catch (e: Exception) {
+                if (running) Log.e(TAG, "accept loop died", e)
             }
         }
 

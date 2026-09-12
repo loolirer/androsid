@@ -104,8 +104,6 @@ class MobileSensors(Node):
         self._stop = threading.Event()
         self._sock = None
         self._send_lock = threading.Lock()
-        self._cmd_id = 0
-        self._pending_results = {}
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -172,8 +170,6 @@ class MobileSensors(Node):
                 self._on_battery(sample)
             elif kind == "frame":
                 self._on_frame(sample["t"], base64.b64decode(sample["d"]))
-            elif kind == "result":
-                self._on_result(sample)
 
     def _on_imu(self, sample):
         if self._last_accel is None:
@@ -283,22 +279,15 @@ class MobileSensors(Node):
         )
         self.pub_battery.publish(msg)
 
-    def send_command_sync(self, action: str, params: dict = None, timeout_sec: float = 2.0):
+    def send_command(self, action: str, params: dict = None) -> bool:
         if params is None:
             params = {}
 
         if self._sock is None:
-            return False, "Device not connected via TCP"
+            self.get_logger().warn("Cannot send command: TCP socket is not connected")
+            return False
 
-        with self._send_lock:
-            self._cmd_id += 1
-            req_id = self._cmd_id
-
-        event = threading.Event()
-        result_data = {}
-        self._pending_results[req_id] = (event, result_data)
-
-        payload = {"id": req_id, "action": action}
+        payload = {"action": action}
         payload.update(params)
         cmd_bytes = (json.dumps(payload) + "\n").encode("utf-8")
 
@@ -308,26 +297,10 @@ class MobileSensors(Node):
                 if sock is None:
                     raise OSError("Socket disconnected")
                 sock.sendall(cmd_bytes)
+            return True
         except (OSError, AttributeError) as exc:
-            self._pending_results.pop(req_id, None)
-            return False, f"Failed to send command: {exc}"
-
-        if not event.wait(timeout=timeout_sec):
-            self._pending_results.pop(req_id, None)
-            return False, f"Command '{action}' timed out after {timeout_sec}s without response"
-
-        return result_data.get("ok", False), result_data.get("data", "")
-
-    def _on_result(self, sample: dict):
-        req_id = sample.get("id")
-        pending = self._pending_results.pop(req_id, None)
-        if pending is None:
-            return
-        
-        event, result_data = pending
-        result_data["ok"] = bool(sample.get("ok", False))
-        result_data["data"] = str(sample.get("data", ""))
-        event.set()
+            self.get_logger().error(f"Failed to send command '{action}': {exc}")
+            return False
 
 def main(args=None):
     rclpy.init(args=args)

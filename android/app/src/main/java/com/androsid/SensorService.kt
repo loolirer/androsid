@@ -266,30 +266,16 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     private fun handleCommand(cmdJson: String) {
         try {
             val json = org.json.JSONObject(cmdJson)
-            val id = json.optLong("id", -1L)
             val action = json.optString("action", "")
-
-            var ok = false
-            var msg = "Unknown action: $action"
 
             when (action) {
 
                 else -> {
-                    // Defaults to ok = false with "Unknown action"
+                    Log.w(TAG, "Unknown or unhandled action received: $action")
                 }
-            }
-
-            if (id != -1L) {
-                val ackObj = org.json.JSONObject().apply {
-                    put("s", "result")
-                    put("id", id)
-                    put("ok", ok)
-                    put("data", msg)
-                }
-                server.broadcast(ackObj.toString())
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling command", e)
+            Log.e(TAG, "Error handling incoming command", e)
         }
     }
 }
