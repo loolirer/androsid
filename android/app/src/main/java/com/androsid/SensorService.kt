@@ -169,51 +169,71 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             try {
                 val provider = future.get().also { cameraProvider = it }
 
-                // CameraX supports binding at most 2 cameras concurrently, in
-                // combinations the device itself declares support for (see
-                // https://developer.android.com/reference/androidx/camera/core/ConcurrentCamera).
-                // Always takes the first reported combo; picking a specific combo
-                // (e.g. preferring rear+rear for stereo) is left for a future
-                // change, once there's a way to configure it.
+                // CameraX supports binding at most 2 cameras concurrently
+                // https://developer.android.com/reference/androidx/camera/core/ConcurrentCamera
                 val combos = provider.availableConcurrentCameraInfos
-                if (combos.isEmpty()) {
-                    Log.w(TAG, "device does not support concurrent camera streaming")
-                    return@addListener
+
+                if (combos.isNotEmpty()) {
+                    bindConcurrentCombo(provider, combos[0])
+                } else {
+                    Log.w(TAG, "device does not support concurrent camera streaming, " +
+                        "falling back to a single rear camera")
+                    bindSingleCamera(provider)
                 }
-
-                val chosenCombo = combos[0]
-                Log.i(TAG, "using first reported combo: ${chosenCombo.size} camera(s)")
-
-                var rearCount = 0
-                val names = chosenCombo.map { info ->
-                    when (lensFacingOf(info)) {
-                        CameraSelector.LENS_FACING_FRONT -> "front"
-                        CameraSelector.LENS_FACING_BACK -> "rear_${rearCount++}"
-                        else -> "camera"
-                    }
-                }
-
-                cameras = chosenCombo.mapIndexed { index, info ->
-                    CameraSource(server, names[index])
-                }.toMutableList()
-
-                val singleConfigs = chosenCombo.mapIndexed { index, info ->
-                    ConcurrentCamera.SingleCameraConfig(
-                        info.cameraSelector,
-                        UseCaseGroup.Builder().addUseCase(cameras[index].imageAnalysis).build(),
-                        this
-                    )
-                }
-
-                // Single call binding every camera in the combo at once -- CameraX
-                // rejects binding them one at a time.
-                provider.bindToLifecycle(singleConfigs)
-
-                Log.i(TAG, "cameras bound: $names")
             } catch (e: Exception) {
-                Log.e(TAG, "failed to bind concurrent cameras", e)
+                Log.e(TAG, "failed to start cameras", e)
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindConcurrentCombo(provider: ProcessCameraProvider, combo: List<CameraInfo>) {
+        Log.i(TAG, "using first reported combo: ${combo.size} camera(s)")
+
+        var rearCount = 0
+        val names = combo.map { info ->
+            when (lensFacingOf(info)) {
+                CameraSelector.LENS_FACING_FRONT -> "front"
+                CameraSelector.LENS_FACING_BACK -> "rear_${rearCount++}"
+                else -> "camera"
+            }
+        }
+
+        cameras = combo.mapIndexed { index, _ -> CameraSource(server, names[index]) }.toMutableList()
+
+        val singleConfigs = combo.mapIndexed { index, info ->
+            ConcurrentCamera.SingleCameraConfig(
+                info.cameraSelector,
+                UseCaseGroup.Builder().addUseCase(cameras[index].imageAnalysis).build(),
+                this
+            )
+        }
+
+        provider.bindToLifecycle(singleConfigs)
+        Log.i(TAG, "cameras bound: $names")
+    }
+
+    private fun bindSingleCamera(provider: ProcessCameraProvider) {
+        val backSelector = CameraSelector.Builder()
+            .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+            .build()
+        val frontSelector = CameraSelector.Builder()
+            .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+            .build()
+
+        val (selector, name) = when {
+            provider.hasCamera(backSelector) -> backSelector to "rear_0"
+            provider.hasCamera(frontSelector) -> frontSelector to "front"
+            else -> {
+                Log.w(TAG, "no usable camera found on this device, camera streaming disabled")
+                return
+            }
+        }
+
+        val source = CameraSource(server, name)
+        cameras = mutableListOf(source)
+
+        provider.bindToLifecycle(this, selector, source.imageAnalysis)
+        Log.i(TAG, "camera bound: $name")
     }
 
     @OptIn(ExperimentalCamera2Interop::class)

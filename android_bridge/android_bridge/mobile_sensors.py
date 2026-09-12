@@ -28,21 +28,21 @@ def to_ros_time(nanos):
 
 
 ANDROID_STATUS_TO_ROS = {
-    1: BatteryState.POWER_SUPPLY_STATUS_UNKNOWN,
-    2: BatteryState.POWER_SUPPLY_STATUS_CHARGING,
-    3: BatteryState.POWER_SUPPLY_STATUS_DISCHARGING,
-    4: BatteryState.POWER_SUPPLY_STATUS_NOT_CHARGING,
-    5: BatteryState.POWER_SUPPLY_STATUS_FULL,
+    1: BatteryState.POWER_SUPPLY_STATUS_UNKNOWN,  # BATTERY_STATUS_UNKNOWN
+    2: BatteryState.POWER_SUPPLY_STATUS_CHARGING,  # BATTERY_STATUS_CHARGING
+    3: BatteryState.POWER_SUPPLY_STATUS_DISCHARGING,  # BATTERY_STATUS_DISCHARGING
+    4: BatteryState.POWER_SUPPLY_STATUS_NOT_CHARGING,  # BATTERY_STATUS_NOT_CHARGING
+    5: BatteryState.POWER_SUPPLY_STATUS_FULL,  # BATTERY_STATUS_FULL
 }
 
 ANDROID_HEALTH_TO_ROS = {
-    1: BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN,
-    2: BatteryState.POWER_SUPPLY_HEALTH_GOOD,
-    3: BatteryState.POWER_SUPPLY_HEALTH_OVERHEAT,
-    4: BatteryState.POWER_SUPPLY_HEALTH_DEAD,
-    5: BatteryState.POWER_SUPPLY_HEALTH_OVERVOLTAGE,
-    6: BatteryState.POWER_SUPPLY_HEALTH_UNSPEC_FAILURE,
-    7: BatteryState.POWER_SUPPLY_HEALTH_COLD,
+    1: BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN,  # BATTERY_HEALTH_UNKNOWN
+    2: BatteryState.POWER_SUPPLY_HEALTH_GOOD,  # BATTERY_HEALTH_GOOD
+    3: BatteryState.POWER_SUPPLY_HEALTH_OVERHEAT,  # BATTERY_HEALTH_OVERHEAT
+    4: BatteryState.POWER_SUPPLY_HEALTH_DEAD,  # BATTERY_HEALTH_DEAD
+    5: BatteryState.POWER_SUPPLY_HEALTH_OVERVOLTAGE,  # BATTERY_HEALTH_OVERVOLTAGE
+    6: BatteryState.POWER_SUPPLY_HEALTH_UNSPEC_FAILURE,  # BATTERY_HEALTH_UNSPECIFIED_FAILURE
+    7: BatteryState.POWER_SUPPLY_HEALTH_COLD,  # BATTERY_HEALTH_COLD
 }
 
 ANDROID_TECH_TO_ROS = {
@@ -69,7 +69,7 @@ class MobileSensors(Node):
         self.imu_frame = self.get_parameter("imu_frame").value
         self.gps_frame = self.get_parameter("gps_frame").value
 
-        qos_overrides = QoSOverridingOptions(
+        self.qos_overrides = QoSOverridingOptions(
             policy_kinds=(
                 QoSPolicyKind.RELIABILITY,
                 QoSPolicyKind.DURABILITY,
@@ -78,20 +78,18 @@ class MobileSensors(Node):
             )
         )
         self.pub_imu = self.create_publisher(
-            Imu, "imu/data_raw", 10, qos_overriding_options=qos_overrides
+            Imu, "imu/data_raw", 10, qos_overriding_options=self.qos_overrides
         )
         self.pub_mag = self.create_publisher(
-            MagneticField, "imu/mag", 10, qos_overriding_options=qos_overrides
+            MagneticField, "imu/mag", 10, qos_overriding_options=self.qos_overrides
         )
         self.pub_gps = self.create_publisher(
-            NavSatFix, "gps/fix", 10, qos_overriding_options=qos_overrides
+            NavSatFix, "gps/fix", 10, qos_overriding_options=self.qos_overrides
         )
         self.pub_battery = self.create_publisher(
-            BatteryState, "battery_state", 10, qos_overriding_options=qos_overrides
+            BatteryState, "battery_state", 10, qos_overriding_options=self.qos_overrides
         )
 
-        # One image publisher per camera, created on demand the first time a
-        # frame arrives tagged with that camera's name ("c" field).
         self.pub_img = {}
 
         self._last_accel = None
@@ -130,8 +128,6 @@ class MobileSensors(Node):
                     self._sock = sock
                     self.get_logger().info("Connected!")
 
-                    # Fresh connection: forget publishers from a previous run, in
-                    # case the set of cameras on the device changed.
                     self.pub_img.clear()
 
                     self._consume(sock)
@@ -168,8 +164,7 @@ class MobileSensors(Node):
             elif kind == "battery":
                 self._on_battery(sample)
             elif kind == "frame":
-                camera_name = sample.get("c", "default")
-                self._on_frame(sample["t"], camera_name, base64.b64decode(sample["d"]))
+                self._on_frame(sample["t"], sample.get("c", "default"), base64.b64decode(sample["d"]))
 
     def _on_imu(self, sample):
         if self._last_accel is None:
@@ -245,19 +240,11 @@ class MobileSensors(Node):
     def _on_frame(self, stamp_nanos, camera_name, jpeg):
         pub = self.pub_img.get(camera_name)
         if pub is None:
-            qos_overrides = QoSOverridingOptions(
-                policy_kinds=(
-                    QoSPolicyKind.RELIABILITY,
-                    QoSPolicyKind.DURABILITY,
-                    QoSPolicyKind.HISTORY,
-                    QoSPolicyKind.DEPTH,
-                )
-            )
             pub = self.create_publisher(
                 CompressedImage,
                 f"camera_{camera_name}/image_raw/compressed",
                 10,
-                qos_overriding_options=qos_overrides,
+                qos_overriding_options=self.qos_overrides,
             )
             self.pub_img[camera_name] = pub
             self.get_logger().info(f"registered camera '{camera_name}'")
