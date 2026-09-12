@@ -298,8 +298,8 @@ class MobileSensors(Node):
                     raise OSError("Socket disconnected")
                 sock.sendall(cmd_bytes)
             return True
-        except (OSError, AttributeError) as exc:
-            self.get_logger().error(f"Failed to send command '{cmd}': {exc}")
+        except (OSError, AttributeError) as e:
+            self.get_logger().error(f"Failed to send command '{cmd}': {e}")
             return False
 
 def main(args=None):
