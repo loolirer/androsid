@@ -177,7 +177,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
                     bindConcurrentCombo(provider, combos[0])
                 } else {
                     Log.w(TAG, "device does not support concurrent camera streaming, " +
-                        "falling back to a single rear camera")
+                        "falling back to a single camera")
                     bindSingleCamera(provider)
                 }
             } catch (e: Exception) {
@@ -189,12 +189,13 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     private fun bindConcurrentCombo(provider: ProcessCameraProvider, combo: List<CameraInfo>) {
         Log.i(TAG, "using first reported combo: ${combo.size} camera(s)")
 
+        var frontCount = 0
         var rearCount = 0
         val names = combo.map { info ->
             when (lensFacingOf(info)) {
-                CameraSelector.LENS_FACING_FRONT -> "front"
+                CameraSelector.LENS_FACING_FRONT -> "front_${frontCount++}"
                 CameraSelector.LENS_FACING_BACK -> "rear_${rearCount++}"
-                else -> "camera"
+                else -> "camera_0"
             }
         }
 
@@ -222,7 +223,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
         val (selector, name) = when {
             provider.hasCamera(backSelector) -> backSelector to "rear_0"
-            provider.hasCamera(frontSelector) -> frontSelector to "front"
+            provider.hasCamera(frontSelector) -> frontSelector to "front_0"
             else -> {
                 Log.w(TAG, "no usable camera found on this device, camera streaming disabled")
                 return

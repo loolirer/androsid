@@ -242,12 +242,11 @@ class MobileSensors(Node):
         if pub is None:
             pub = self.create_publisher(
                 CompressedImage,
-                f"camera_{camera_name}/image_raw/compressed",
+                f"camera/{camera_name}/image_raw/compressed",
                 10,
                 qos_overriding_options=self.qos_overrides,
             )
             self.pub_img[camera_name] = pub
-            self.get_logger().info(f"registered camera '{camera_name}'")
 
         msg = CompressedImage()
         msg.header.stamp = to_ros_time(stamp_nanos)

@@ -10,7 +10,7 @@ A ROS 2 development environment that runs on an Android smartphone. It is built 
 
 ## Building the app
 
-The app is the sensor source: it holds the camera, IMU and GPS handles and streams
+The app is the sensor source: it holds the camera(s), IMU and GPS handles and streams
 them over a localhost socket to the node running in the container.
 
 Open the `androsid/android` folder in Android Studio and hit `Run` with the phone connected
@@ -69,7 +69,7 @@ If everything is working correctly, the bridge node should be publishing on the 
 - `/imu/data_raw`
 - `/imu/mag`
 - `/gps/fix`
-- `/camera/image_raw/compressed`
+- `/camera/<name>/image_raw/compressed` (one per available camera, e.g. `/camera/front_0/image_raw/compressed`, `/camera/rear_0/image_raw/compressed`)
 - `/battery_state`
 
 You may customize each topic QoS profile by modifying `android_bridge/config/mobile_sensors.yaml`:
