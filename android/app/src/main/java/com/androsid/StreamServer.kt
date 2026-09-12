@@ -33,9 +33,9 @@ class StreamServer(
         thread(name = "androsid-accept", isDaemon = true) {
             while (running) {
                 try {
-                    ServerSocket(port).use { srv -> 
+                    ServerSocket(port).use { srv ->
                         server = srv
-                        Log.i(TAG, "listening on 0.0.0.0:$port")                        
+                        Log.i(TAG, "listening on 0.0.0.0:$port")
                         val sock = srv.accept()
                         sock.tcpNoDelay = true
 
