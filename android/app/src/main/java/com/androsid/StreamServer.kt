@@ -2,13 +2,16 @@ package com.androsid
 
 import android.util.Log
 import java.io.BufferedOutputStream
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.net.ServerSocket
 import java.net.Socket
 import kotlin.concurrent.thread
 
 class StreamServer(
     private val port: Int,
-    private val idleTimeoutMs: Long = 1000,
+    private val idleTimeoutMs: Long = 1000L,
+    private val onCommandReceived: ((String) -> Unit)? = null
 ) {
 
     companion object {
@@ -35,8 +38,29 @@ class StreamServer(
                         Log.i(TAG, "listening on 0.0.0.0:$port")
                         val sock = srv.accept()
                         sock.tcpNoDelay = true
-                        client = Client(sock)
+
+                        val currentClient = Client(sock)
+                        this.client = currentClient
                         Log.i(TAG, "client connected: ${sock.inetAddress}")
+
+                        thread(name="androsid-reader-${sock.port}", isDaemon = true) {
+                            try {
+                                val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
+                                while (running && !sock.isClosed) {
+                                    val line = reader.readLine() ?: break
+                                    if (line.isNotBlank()) {
+                                        currentClient.lastSeenAt = System.currentTimeMillis()
+                                        onCommandReceived?.invoke(line)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                if (running) { 
+                                    Log.i(TAG, "Client read ended: ${e.message}") 
+                                }
+                            } finally {
+                                dropClient(currentClient)
+                            }
+                        }
                     }
 
                     while (running && client != null) Thread.sleep(idleTimeoutMs)

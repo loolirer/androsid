@@ -97,6 +97,8 @@ class MobileSensors(Node):
 
         self._stop = threading.Event()
         self._sock = None
+        self._send_lock = threading.Lock()
+
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -132,10 +134,10 @@ class MobileSensors(Node):
 
                     self._consume(sock)
 
-            except OSError as exc:
+            except OSError as e:
                 if self._stop.is_set():
                     break
-                self.get_logger().warn(f"Connection failed: {exc}; retrying in 2s")
+                self.get_logger().warn(f"Connection failed: {e}; retrying in 2s")
                 self._stop.wait(2.0)
 
             finally:
@@ -284,6 +286,28 @@ class MobileSensors(Node):
         )
         self.pub_battery.publish(msg)
 
+    def send_command(self, cmd: str, params: dict = None) -> bool:
+        if params is None:
+            params = {}
+
+        if self._sock is None:
+            self.get_logger().warn("Cannot send command: TCP socket is not connected")
+            return False
+
+        payload = {"cmd": cmd}
+        payload.update(params)
+        cmd_bytes = (json.dumps(payload) + "\n").encode("utf-8")
+
+        try:
+            with self._send_lock:
+                sock = self._sock
+                if sock is None:
+                    raise OSError("Socket disconnected")
+                sock.sendall(cmd_bytes)
+            return True
+        except (OSError, AttributeError) as e:
+            self.get_logger().error(f"Failed to send command '{cmd}': {e}")
+            return False
 
 def main(args=None):
     rclpy.init(args=args)

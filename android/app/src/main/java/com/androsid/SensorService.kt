@@ -69,7 +69,9 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(PORT)
+        server = StreamServer(PORT) {
+            rawCommand -> handleCommand(rawCommand)
+        }
         server.start()
 
         startForeground(NOTIF_ID, buildNotification())
@@ -351,5 +353,23 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             .setOngoing(true)
             .setContentIntent(tap)
             .build()
+    }
+    
+    // ----------------------------------------------------------- commands
+
+    private fun handleCommand(cmdJson: String) {
+        try {
+            val json = org.json.JSONObject(cmdJson)
+            val cmd = json.optString("cmd", "")
+
+            when (cmd) {
+
+                else -> {
+                    Log.w(TAG, "Unknown or unhandled command received: $cmd")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error handling incoming command", e)
+        }
     }
 }
