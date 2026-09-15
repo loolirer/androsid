@@ -79,4 +79,10 @@ ros2 run android_bridge mobile_sensors --ros-args --params-file \
   $(ros2 pkg prefix android_bridge)/share/android_bridge/config/mobile_sensors.yaml
 ```
 
+#### Services
+- `/set_torch` (`android_interfaces/srv/SetTorch`): Turns the device flashlight on (true) or off (false).
+```bash
+ros2 service call /set_torch android_interfaces/srv/SetTorch "{data: true}"
+```
+
 ---

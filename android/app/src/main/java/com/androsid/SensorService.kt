@@ -26,6 +26,7 @@ import android.util.Log
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ConcurrentCamera
 import androidx.camera.core.UseCaseGroup
@@ -59,6 +60,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     private lateinit var sensorManager: SensorManager
     private var cameraProvider: ProcessCameraProvider? = null
     private var cameras: MutableList<CameraSource> = mutableListOf()
+    private val activeCameras: MutableList<Camera> = mutableListOf()
     private var wakeLock: PowerManager.WakeLock? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private var sensorThread: HandlerThread? = null
@@ -102,6 +104,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         sensorManager.unregisterListener(this)
         cameras.forEach { it.stop() }
         cameras.clear()
+        activeCameras.clear()
         cameraProvider?.unbindAll()
         try {
             (getSystemService(Context.LOCATION_SERVICE) as LocationManager)
@@ -213,7 +216,9 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             )
         }
 
-        provider.bindToLifecycle(singleConfigs)
+        val concurrentCamera = provider.bindToLifecycle(singleConfigs)
+        activeCameras.clear()
+        activeCameras.addAll(concurrentCamera.cameras)
         Log.i(TAG, "cameras bound: $names")
     }
 
@@ -237,7 +242,9 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         val source = CameraSource(server, name)
         cameras = mutableListOf(source)
 
-        provider.bindToLifecycle(this, selector, source.imageAnalysis)
+        val camera = provider.bindToLifecycle(this, selector, source.imageAnalysis)
+        activeCameras.clear()
+        activeCameras.add(camera)
         Log.i(TAG, "camera bound: $name")
     }
 
@@ -376,13 +383,26 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     
     // ----------------------------------------------------------- commands
 
+    private fun SetTorch(enabled: Boolean) {
+        val target = activeCameras.firstOrNull { it.cameraInfo.hasFlashUnit() }
+        if (target != null) {
+            target.cameraControl.enableTorch(enabled)
+            Log.i(TAG, "Torch state set to: $enabled")
+        } else {
+            Log.w(TAG, "No camera with flash unit available")
+        }
+    }
+
     private fun handleCommand(cmdJson: String) {
         try {
             val json = org.json.JSONObject(cmdJson)
             val cmd = json.optString("cmd", "")
 
             when (cmd) {
-
+                "torch" -> {
+                    val enabled = json.optBoolean("enabled", false)
+                    SetTorch(enabled)
+                }
                 else -> {
                     Log.w(TAG, "Unknown or unhandled command received: $cmd")
                 }

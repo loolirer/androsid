@@ -16,6 +16,9 @@ from android_bridge.android_to_ros import (
     mag_msg,
 )
 
+from android_interfaces.srv import (
+    SetTorch,
+)
 
 class MobileSensors(Node):
 
@@ -54,6 +57,10 @@ class MobileSensors(Node):
         )
 
         self.pub_img = {}
+
+        self.srv_torch = self.create_service(
+            SetTorch, "set_torch", self._on_set_torch
+        )
 
         self._last_accel = None
 
@@ -181,6 +188,16 @@ class MobileSensors(Node):
         except (OSError, AttributeError) as e:
             self.get_logger().error(f"Failed to send command '{cmd}': {e}")
             return False
+
+    def _on_set_torch(self, request, response):
+        success = self._send_command("torch", {"enabled": request.data})
+        response.success = success
+        response.message = (
+            "Torch command dispatched"
+            if success
+            else "Failed to dispatch: TCP sock not connected"
+        )
+        return response
 
 
 def main(args=None):
