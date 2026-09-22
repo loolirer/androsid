@@ -72,6 +72,10 @@ If everything is working correctly, the bridge node should be publishing on the 
 - `/camera/<name>/image_raw/compressed`
 - `/battery_state`
 
+And serves the following service:
+
+- `/set_torch`
+
 You may customize each topic QoS profile by modifying `android_bridge/config/mobile_sensors.yaml`:
 
 ```bash
