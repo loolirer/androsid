@@ -16,17 +16,17 @@ def android_to_flu(x, y, z):
     return -z, y, x
 
 
-def imu_msg(sample, last_accel, frame_id):
+def imu_msg(sample, frame_id):
     msg = Imu()
     msg.header.stamp = Time(nanoseconds=sample["stamp"]).to_msg()
     msg.header.frame_id = frame_id
 
-    gx, gy, gz = android_to_flu(*sample["axes"])
+    gx, gy, gz = android_to_flu(*sample["gyro"])
     msg.angular_velocity.x = float(gx)
     msg.angular_velocity.y = float(gy)
     msg.angular_velocity.z = float(gz)
 
-    ax, ay, az = android_to_flu(*last_accel)
+    ax, ay, az = android_to_flu(*sample["accel"])
     msg.linear_acceleration.x = float(ax)
     msg.linear_acceleration.y = float(ay)
     msg.linear_acceleration.z = float(az)
@@ -50,7 +50,7 @@ def mag_msg(sample, frame_id):
     msg.header.stamp = Time(nanoseconds=sample["stamp"]).to_msg()
     msg.header.frame_id = frame_id
 
-    mx, my, mz = android_to_flu(*sample["axes"])
+    mx, my, mz = android_to_flu(*sample["mag"])
     msg.magnetic_field.x = float(mx)
     msg.magnetic_field.y = float(my)
     msg.magnetic_field.z = float(mz)
