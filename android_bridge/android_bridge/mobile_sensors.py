@@ -62,8 +62,6 @@ class MobileSensors(Node):
             SetTorch, "set_torch", self._on_set_torch
         )
 
-        self._last_accel = None
-
         self._stop = threading.Event()
         self._sock = None
         self._send_lock = threading.Lock()
@@ -124,9 +122,7 @@ class MobileSensors(Node):
 
             sample = json.loads(line)
             sample_type = sample.get("type")
-            if sample_type == "accel":
-                self._last_accel = sample["axes"]
-            elif sample_type == "gyro":
+            if sample_type == "imu":
                 self._on_imu(sample)
             elif sample_type == "mag":
                 self._on_mag(sample)
@@ -138,10 +134,7 @@ class MobileSensors(Node):
                 self._on_battery(sample)
 
     def _on_imu(self, sample):
-        if self._last_accel is None:
-            return
-
-        self.pub_imu.publish(imu_msg(sample, self._last_accel, self.imu_frame))
+        self.pub_imu.publish(imu_msg(sample, self.imu_frame))
 
     def _on_mag(self, sample):
         self.pub_mag.publish(mag_msg(sample, self.imu_frame))

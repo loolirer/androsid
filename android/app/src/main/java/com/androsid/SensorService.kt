@@ -48,6 +48,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         private const val NOTIF_ID = 1
 
         private const val SENSOR_PERIOD_US = 5000
+        private const val MAG_SCALE = 1e-6f // From uT to T
 
         private const val LOCATION_PERIOD_MS = 1000L
 
@@ -63,6 +64,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     private var multicastLock: WifiManager.MulticastLock? = null
     private var sensorThread: HandlerThread? = null
     private var loggedFirstFix = false
+    private var lastAccel: FloatArray? = null
 
     private var batteryReceiver: BroadcastReceiver? = null
 
@@ -316,16 +318,25 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     // -------------------------------------------------------------- callbacks
 
     override fun onSensorChanged(event: SensorEvent) {
-        val (name, scale) = when (event.sensor.type) {
-            Sensor.TYPE_ACCELEROMETER -> "accel" to 1.0f
-            Sensor.TYPE_GYROSCOPE     -> "gyro" to 1.0f
-            Sensor.TYPE_MAGNETIC_FIELD -> "mag" to 1e-6f // From uT to T
+        when (event.sensor.type) {
+            Sensor.TYPE_ACCELEROMETER -> {
+                lastAccel = event.values.clone()
+            }
+            Sensor.TYPE_GYROSCOPE -> {
+                val accel = lastAccel ?: return
+                val t = event.timestamp + bootToEpochNanos
+                server.broadcast(
+                    """{"type":"imu","stamp":$t,"accel":[${accel[0]},${accel[1]},${accel[2]}],"gyro":[${event.values[0]},${event.values[1]},${event.values[2]}]}"""
+                )
+            }
+            Sensor.TYPE_MAGNETIC_FIELD -> {
+                val t = event.timestamp + bootToEpochNanos
+                server.broadcast(
+                    """{"type":"mag","stamp":$t,"mag":[${event.values[0] * MAG_SCALE},${event.values[1] * MAG_SCALE},${event.values[2] * MAG_SCALE}]}"""
+                )
+            }
             else -> return
         }
-        val t = event.timestamp + bootToEpochNanos
-        server.broadcast(
-            """{"type":"$name","stamp":$t,"axes":[${event.values[0] * scale},${event.values[1] * scale},${event.values[2] * scale}]}"""
-        )
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
