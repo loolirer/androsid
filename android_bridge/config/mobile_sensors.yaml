@@ -1,5 +1,12 @@
 /mobile_sensors:
   ros__parameters:
+    host: 127.0.0.1
+    port: 9870
+    imu_frame: imu_link
+    gps_frame: gps_link
+    camera_names:
+      - front_0
+      - rear_0
     qos_overrides:
       /imu/data_raw:
         publisher:
