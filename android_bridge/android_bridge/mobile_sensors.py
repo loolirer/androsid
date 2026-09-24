@@ -3,9 +3,9 @@ import socket
 import threading
 
 import rclpy
-from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.lifecycle import Node as LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
+from rclpy.parameter import Parameter
 from rclpy.qos import QoSPolicyKind
 from rclpy.qos_overriding_options import QoSOverridingOptions
 from sensor_msgs.msg import BatteryState, CompressedImage, Imu, MagneticField, NavSatFix
@@ -32,11 +32,7 @@ class MobileSensors(LifecycleNode):
         self.declare_parameter("port", 9870)
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
-        self.declare_parameter(
-            "camera_names",
-            [],
-            ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY),
-        )
+        self.declare_parameter("camera_names", Parameter.Type.STRING_ARRAY)
 
         self.pubs = {}
         self.srvs = {}
