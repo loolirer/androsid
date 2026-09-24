@@ -56,10 +56,10 @@ Alternatively, to ssh directly into the container from your computer on the next
 ssh -p 8022 u0_aXXX@<phone-ip> -t 'proot-distro login androsid'
 ```
 
-And run the bridge:
+And launch the bridge:
 
 ```bash
-ros2 run android_bridge mobile_sensors
+ros2 launch android_bridge mobile_sensors.launch.py
 ```
 
 ## Usage
@@ -69,18 +69,11 @@ If everything is working correctly, the bridge node should be publishing on the 
 - `/imu/data_raw`
 - `/imu/mag`
 - `/gps/fix`
-- `/camera/<name>/image_raw/compressed`
+- `/camera/<name>/image_raw/compressed` for each name in the `camera_names` parameter
 - `/battery_state`
 
 And serves the following service:
 
 - `/set_torch`
-
-You may customize each topic QoS profile by modifying `android_bridge/config/mobile_sensors.yaml`:
-
-```bash
-ros2 run android_bridge mobile_sensors --ros-args --params-file \
-  $(ros2 pkg prefix android_bridge)/share/android_bridge/config/mobile_sensors.yaml
-```
 
 ---
