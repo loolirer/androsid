@@ -3,6 +3,7 @@ import socket
 import threading
 
 import rclpy
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.lifecycle import Node as LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
 from rclpy.qos import QoSPolicyKind
@@ -31,6 +32,11 @@ class MobileSensors(LifecycleNode):
         self.declare_parameter("port", 9870)
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
+        self.declare_parameter(
+            "camera_names",
+            [],
+            ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY),
+        )
 
         self.pubs = {}
         self.srvs = {}
@@ -45,6 +51,7 @@ class MobileSensors(LifecycleNode):
         self.port = self.get_parameter("port").value
         self.imu_frame = self.get_parameter("imu_frame").value
         self.gps_frame = self.get_parameter("gps_frame").value
+        self.camera_names = self.get_parameter("camera_names").value
 
         self.qos_overrides = QoSOverridingOptions(
             policy_kinds=(
@@ -66,6 +73,13 @@ class MobileSensors(LifecycleNode):
         self.pubs["battery"] = self.create_lifecycle_publisher(
             BatteryState, "battery_state", 10, qos_overriding_options=self.qos_overrides
         )
+        for camera_name in self.camera_names:
+            self.pubs[f"img_{camera_name}"] = self.create_lifecycle_publisher(
+                CompressedImage,
+                f"camera/{camera_name}/image_raw/compressed",
+                10,
+                qos_overriding_options=self.qos_overrides,
+            )
 
         self.srvs["torch"] = self.create_service(
             SetTorch, "set_torch", self._on_set_torch
@@ -121,12 +135,6 @@ class MobileSensors(LifecycleNode):
                 self.get_logger().warn("Reader thread still running after 2s")
             self._thread = None
 
-        self._clear_image_publishers()
-
-    def _clear_image_publishers(self):
-        for name in [n for n in self.pubs if n.startswith("img_")]:
-            self.destroy_publisher(self.pubs.pop(name))
-
     def _destroy_resources(self):
         for pub in self.pubs.values():
             self.destroy_publisher(pub)
@@ -147,8 +155,6 @@ class MobileSensors(LifecycleNode):
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     self.get_logger().info("Connected!")
-
-                    self._clear_image_publishers()
 
                     self._consume(sock)
 
@@ -198,18 +204,15 @@ class MobileSensors(LifecycleNode):
 
     def _on_frame(self, sample):
         camera_name = sample.get("camera_name", "default")
-        key = f"img_{camera_name}"
-        pub = self.pubs.get(key)
+        pub = self.pubs.get(f"img_{camera_name}")
         if pub is None:
-            pub = self.create_publisher(
-                CompressedImage,
-                f"camera/{camera_name}/image_raw/compressed",
-                10,
-                qos_overriding_options=self.qos_overrides,
+            self.get_logger().warn(
+                f"Received frame from unrecognized camera '{camera_name}'", once=True
             )
-            self.pubs[key] = pub
+            return
 
-        pub.publish(frame_msg(sample, f"camera_{camera_name}_optical_frame"))
+        if pub.is_activated:
+            pub.publish(frame_msg(sample, f"camera_{camera_name}_optical_frame"))
 
     def _on_battery(self, sample):
         if self.pubs["battery"].is_activated:
