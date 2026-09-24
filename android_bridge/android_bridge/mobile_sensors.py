@@ -3,7 +3,9 @@ import socket
 import threading
 
 import rclpy
-from rclpy.node import Node
+from rclpy.lifecycle import Node as LifecycleNode
+from rclpy.lifecycle import TransitionCallbackReturn
+from rclpy.parameter import Parameter
 from rclpy.qos import QoSPolicyKind
 from rclpy.qos_overriding_options import QoSOverridingOptions
 from sensor_msgs.msg import BatteryState, CompressedImage, Imu, MagneticField, NavSatFix
@@ -20,7 +22,8 @@ from android_interfaces.srv import (
     SetTorch,
 )
 
-class MobileSensors(Node):
+
+class MobileSensors(LifecycleNode):
 
     def __init__(self):
         super().__init__("mobile_sensors")
@@ -29,11 +32,22 @@ class MobileSensors(Node):
         self.declare_parameter("port", 9870)
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
+        self.declare_parameter("camera_names", Parameter.Type.STRING_ARRAY)
 
+        self.pubs = {}
+        self.srvs = {}
+
+        self._stop = threading.Event()
+        self._sock = None
+        self._send_lock = threading.Lock()
+        self._thread = None
+
+    def on_configure(self, state):
         self.host = self.get_parameter("host").value
         self.port = self.get_parameter("port").value
         self.imu_frame = self.get_parameter("imu_frame").value
         self.gps_frame = self.get_parameter("gps_frame").value
+        self.camera_names = self.get_parameter("camera_names").value
 
         self.qos_overrides = QoSOverridingOptions(
             policy_kinds=(
@@ -43,33 +57,65 @@ class MobileSensors(Node):
                 QoSPolicyKind.DEPTH,
             )
         )
-        self.pub_imu = self.create_publisher(
+        self.pubs["imu"] = self.create_lifecycle_publisher(
             Imu, "imu/data_raw", 10, qos_overriding_options=self.qos_overrides
         )
-        self.pub_mag = self.create_publisher(
+        self.pubs["mag"] = self.create_lifecycle_publisher(
             MagneticField, "imu/mag", 10, qos_overriding_options=self.qos_overrides
         )
-        self.pub_gps = self.create_publisher(
+        self.pubs["gps"] = self.create_lifecycle_publisher(
             NavSatFix, "gps/fix", 10, qos_overriding_options=self.qos_overrides
         )
-        self.pub_battery = self.create_publisher(
+        self.pubs["battery"] = self.create_lifecycle_publisher(
             BatteryState, "battery_state", 10, qos_overriding_options=self.qos_overrides
         )
+        for camera_name in self.camera_names:
+            self.pubs[f"img_{camera_name}"] = self.create_lifecycle_publisher(
+                CompressedImage,
+                f"camera/{camera_name}/image_raw/compressed",
+                10,
+                qos_overriding_options=self.qos_overrides,
+            )
 
-        self.pub_img = {}
-
-        self.srv_torch = self.create_service(
+        self.srvs["torch"] = self.create_service(
             SetTorch, "set_torch", self._on_set_torch
         )
 
-        self._stop = threading.Event()
-        self._sock = None
-        self._send_lock = threading.Lock()
+        self.get_logger().info("Configured")
+        return TransitionCallbackReturn.SUCCESS
 
+    def on_activate(self, state):
+        result = super().on_activate(state)
+
+        self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+        self.get_logger().info("Streaming started")
+        return result
+
+    def on_deactivate(self, state):
+        result = super().on_deactivate(state)
+        self._stop_streaming()
+        self.get_logger().info("Streaming Stopped")
+        return result
+
+    def on_cleanup(self, state):
+        self._stop_streaming()
+        self._destroy_resources()
+        self.get_logger().info("Cleaned Up")
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_shutdown(self, state):
+        self._stop_streaming()
+        self._destroy_resources()
+        self.get_logger().info("Shut Down")
+        return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
+        self._stop_streaming()
+        return super().destroy_node()
+
+    def _stop_streaming(self):
         self._stop.set()
 
         sock, self._sock = self._sock, None
@@ -79,11 +125,20 @@ class MobileSensors(Node):
             except OSError:
                 pass
 
-        self._thread.join(timeout=2.0)
-        if self._thread.is_alive():
-            self.get_logger().warn("Reader thread still running after 2s")
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            if self._thread.is_alive():
+                self.get_logger().warn("Reader thread still running after 2s")
+            self._thread = None
 
-        return super().destroy_node()
+    def _destroy_resources(self):
+        for pub in self.pubs.values():
+            self.destroy_publisher(pub)
+        self.pubs.clear()
+
+        for srv in self.srvs.values():
+            self.destroy_service(srv)
+        self.srvs.clear()
 
     def _run(self):
         while not self._stop.is_set() and rclpy.ok():
@@ -96,8 +151,6 @@ class MobileSensors(Node):
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                     self._sock = sock
                     self.get_logger().info("Connected!")
-
-                    self.pub_img.clear()
 
                     self._consume(sock)
 
@@ -134,30 +187,32 @@ class MobileSensors(Node):
                 self._on_battery(sample)
 
     def _on_imu(self, sample):
-        self.pub_imu.publish(imu_msg(sample, self.imu_frame))
+        if self.pubs["imu"].is_activated:
+            self.pubs["imu"].publish(imu_msg(sample, self.imu_frame))
 
     def _on_mag(self, sample):
-        self.pub_mag.publish(mag_msg(sample, self.imu_frame))
+        if self.pubs["mag"].is_activated:
+            self.pubs["mag"].publish(mag_msg(sample, self.imu_frame))
 
     def _on_gps(self, sample):
-        self.pub_gps.publish(gps_msg(sample, self.gps_frame))
+        if self.pubs["gps"].is_activated:
+            self.pubs["gps"].publish(gps_msg(sample, self.gps_frame))
 
     def _on_frame(self, sample):
         camera_name = sample.get("camera_name", "default")
-        pub = self.pub_img.get(camera_name)
+        pub = self.pubs.get(f"img_{camera_name}")
         if pub is None:
-            pub = self.create_publisher(
-                CompressedImage,
-                f"camera/{camera_name}/image_raw/compressed",
-                10,
-                qos_overriding_options=self.qos_overrides,
+            self.get_logger().warn(
+                f"Received frame from unrecognized camera '{camera_name}'", once=True
             )
-            self.pub_img[camera_name] = pub
+            return
 
-        pub.publish(frame_msg(sample, f"camera_{camera_name}_optical_frame"))
+        if pub.is_activated:
+            pub.publish(frame_msg(sample, f"camera_{camera_name}_optical_frame"))
 
     def _on_battery(self, sample):
-        self.pub_battery.publish(battery_msg(sample))
+        if self.pubs["battery"].is_activated:
+            self.pubs["battery"].publish(battery_msg(sample))
 
     def _send_command(self, cmd, params):
         if params is None:
