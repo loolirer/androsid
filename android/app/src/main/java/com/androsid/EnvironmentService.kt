@@ -144,7 +144,7 @@ class EnvironmentService : LifecycleService() {
         rootfs.deleteRecursively()
         rootfs.mkdirs()
 
-        val pb = ProcessBuilder("/system/bin/tar", "xf", incoming.absolutePath, "-C", rootfs.absolutePath)
+        val pb = ProcessBuilder("/system/bin/tar", "xzf", incoming.absolutePath, "-C", rootfs.absolutePath)
         pb.redirectErrorStream(true)
         val process = pb.start()
         val output = process.inputStream.bufferedReader().readText()
