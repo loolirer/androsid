@@ -9,7 +9,12 @@ RUN apt-get update && \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rm -f /etc/ssh/ssh_host_*
+RUN rm -f /etc/ssh/ssh_host_* && \
+    mkdir -p /run/sshd && chmod 755 /run/sshd && \
+    sed -i -E 's/^#?Port .*/Port 8022/' /etc/ssh/sshd_config && \
+    sed -i -E 's/^#?UsePAM .*/UsePAM no/' /etc/ssh/sshd_config && \
+    sed -i '/^AcceptEnv/d' /etc/ssh/sshd_config && \
+    touch /root/.hushlogin
 
 WORKDIR /root/ros2_ws
 
