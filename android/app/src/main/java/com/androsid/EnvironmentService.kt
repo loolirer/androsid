@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import java.io.File
+import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicBoolean
 
 class EnvironmentService : LifecycleService() {
@@ -22,6 +23,7 @@ class EnvironmentService : LifecycleService() {
         private val LISTENING_PORT = Regex("""listening on .+ port (\d+)""")
 
         const val ACTION_REPLACE_ROOTFS = "com.androsid.action.REPLACE_ROOTFS"
+        const val ACTION_ADD_AUTHORIZED_KEY = "com.androsid.action.ADD_AUTHORIZED_KEY"
     }
 
     @Volatile
@@ -40,10 +42,10 @@ class EnvironmentService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val result = super.onStartCommand(intent, flags, startId)
-        if (intent?.action == ACTION_REPLACE_ROOTFS) {
-            Thread(::replaceAndRestart, "linux-env-replace").start()
-        } else {
-            tryStartEnvironment()
+        when (intent?.action) {
+            ACTION_REPLACE_ROOTFS -> Thread(::replaceAndRestart, "linux-env-replace").start()
+            ACTION_ADD_AUTHORIZED_KEY -> Thread(::addAuthorizedKey, "linux-env-addkey").start()
+            else -> tryStartEnvironment()
         }
         return result
     }
@@ -95,6 +97,35 @@ class EnvironmentService : LifecycleService() {
         val rootfs = File(filesDir, "rootfs")
         if (!rootfs.exists()) return true
         return rootfs.deleteRecursively() && !rootfs.exists()
+    }
+
+    private fun addAuthorizedKey() {
+        val incoming = File(filesDir, "incoming/authorized_key.pub")
+        if (!incoming.exists()) {
+            Log.w(TAG, "no incoming public key to authorize")
+            return
+        }
+        val pubkey = incoming.readText().trim()
+        incoming.delete()
+
+        val rootfs = File(filesDir, "rootfs")
+        if (!File(rootfs, "root").isDirectory) {
+            Log.w(TAG, "no rootfs extracted yet, ignoring shared key")
+            return
+        }
+
+        val sshDir = File(rootfs, "root/.ssh").apply { mkdirs() }
+        Os.chmod(sshDir.absolutePath, "700".toInt(8))
+
+        val authorizedKeys = File(sshDir, "authorized_keys")
+        if (authorizedKeys.exists() && authorizedKeys.readLines().contains(pubkey)) {
+            Log.i(TAG, "key already authorized, ignoring duplicate")
+            return
+        }
+
+        authorizedKeys.appendText(pubkey + "\n")
+        Os.chmod(authorizedKeys.absolutePath, "600".toInt(8))
+        Log.i(TAG, "authorized new SSH public key")
     }
 
     private fun stopCurrentAttempt() {
@@ -192,14 +223,26 @@ class EnvironmentService : LifecycleService() {
             return false
         }
 
+        val root = Paths.get("/rootfs")
         for (entry in entries) {
-            if (entry.startsWith("/")) {
+            val parts = entry.split(" -> ", limit = 2)
+            val entryPath = parts[0]
+
+            if (entryPath.startsWith("/")) {
                 Log.e(TAG, "tarball entry is an absolute path: $entry")
                 return false
             }
-            val segments = entry.split("/")
-            if (segments.any { it == ".." }) {
+            val resolvedEntry = root.resolve(entryPath).normalize()
+            if (!resolvedEntry.startsWith(root)) {
                 Log.e(TAG, "tarball entry escapes target directory: $entry")
+                return false
+            }
+
+            val symlinkTarget = parts.getOrNull(1) ?: continue
+            if (symlinkTarget.startsWith("/")) continue
+            val resolvedTarget = resolvedEntry.resolveSibling(symlinkTarget).normalize()
+            if (!resolvedTarget.startsWith(root)) {
+                Log.e(TAG, "tarball symlink escapes target directory: $entry")
                 return false
             }
         }
