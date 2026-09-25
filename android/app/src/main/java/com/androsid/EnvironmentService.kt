@@ -71,6 +71,18 @@ class EnvironmentService : LifecycleService() {
 
     private fun replaceAndRestart() {
         Log.i(TAG, "replacing the environment with the freshly shared rootfs")
+
+        val incoming = File(filesDir, "incoming/rootfs.tar")
+        if (!incoming.exists()) {
+            Log.w(TAG, "no incoming tarball to replace with")
+            return
+        }
+        if (!isTarSafe(incoming)) {
+            Log.e(TAG, "rejected tarball with entries escaping the target directory, keeping current environment")
+            incoming.delete()
+            return
+        }
+
         stopCurrentAttempt()
         if (!deleteRootfs()) {
             Log.e(TAG, "rootfs delete left something behind, aborting replace")
@@ -140,6 +152,12 @@ class EnvironmentService : LifecycleService() {
             return null
         }
 
+        if (!isTarSafe(incoming)) {
+            Log.e(TAG, "rejected tarball with entries escaping the target directory")
+            incoming.delete()
+            return null
+        }
+
         Log.i(TAG, "extracting ${incoming.absolutePath} -> ${rootfs.absolutePath}")
         rootfs.deleteRecursively()
         rootfs.mkdirs()
@@ -160,6 +178,32 @@ class EnvironmentService : LifecycleService() {
         Log.i(TAG, "rootfs extracted successfully")
         incoming.delete()
         return rootfs
+    }
+
+    private fun isTarSafe(tarball: File): Boolean {
+        val pb = ProcessBuilder("/system/bin/tar", "tf", tarball.absolutePath)
+        pb.redirectErrorStream(true)
+        val process = pb.start()
+        val entries = process.inputStream.bufferedReader().readLines()
+        val exitCode = process.waitFor()
+
+        if (exitCode != 0) {
+            Log.e(TAG, "failed to list tarball contents (exit $exitCode)")
+            return false
+        }
+
+        for (entry in entries) {
+            if (entry.startsWith("/")) {
+                Log.e(TAG, "tarball entry is an absolute path: $entry")
+                return false
+            }
+            val segments = entry.split("/")
+            if (segments.any { it == ".." }) {
+                Log.e(TAG, "tarball entry escapes target directory: $entry")
+                return false
+            }
+        }
+        return true
     }
 
     private fun runEnvironment() {
