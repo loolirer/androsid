@@ -9,4 +9,4 @@ cid="$(docker create --platform linux/arm64 "$image")"
 trap 'docker rm -f "$cid" >/dev/null; rm -rf "$tmp"' EXIT
 
 docker export "$cid" | tar -x -C "$tmp"
-tar --hard-dereference -cf "$out" -C "$tmp" .
+tar --hard-dereference -czf "$out" -C "$tmp" .
