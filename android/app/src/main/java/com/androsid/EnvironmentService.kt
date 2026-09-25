@@ -24,6 +24,7 @@ class EnvironmentService : LifecycleService() {
         const val ACTION_REPLACE_ROOTFS = "com.androsid.action.REPLACE_ROOTFS"
     }
 
+    @Volatile
     private var supervisorThread: Thread? = null
 
     private val attempting = AtomicBoolean(false)
