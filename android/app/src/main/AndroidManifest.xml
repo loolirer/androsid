@@ -41,6 +41,7 @@
                 <data android:mimeType="application/x-gtar" />
                 <data android:mimeType="application/gzip" />
                 <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 
