@@ -212,7 +212,7 @@ class EnvironmentService : LifecycleService() {
     }
 
     private fun isTarSafe(tarball: File): Boolean {
-        val pb = ProcessBuilder("/system/bin/tar", "tf", tarball.absolutePath)
+        val pb = ProcessBuilder("/system/bin/tar", "tvf", tarball.absolutePath)
         pb.redirectErrorStream(true)
         val process = pb.start()
         val entries = process.inputStream.bufferedReader().readLines()
@@ -223,9 +223,20 @@ class EnvironmentService : LifecycleService() {
             return false
         }
 
+        val listingLine = Regex("""^(\S+)\s+\S+\s+\d+\s+\S+\s+\S+\s+(.*)$""")
         val root = Paths.get("/rootfs")
         for (entry in entries) {
-            val (name, symlinkTarget) = entry.split(" -> ", limit = 2).let { it[0] to it.getOrNull(1) }
+            val match = listingLine.matchEntire(entry)
+            if (match == null) {
+                Log.e(TAG, "unrecognized tar listing line: $entry")
+                return false
+            }
+            val (mode, rest) = match.destructured
+            val (name, symlinkTarget) = if (mode.firstOrNull() == 'l') {
+                rest.split(" -> ", limit = 2).let { it[0] to it.getOrNull(1) }
+            } else {
+                rest to null
+            }
 
             val resolvedEntry = root.resolve(name).normalize()
             if (name.startsWith("/") || !resolvedEntry.startsWith(root)) {
@@ -233,10 +244,16 @@ class EnvironmentService : LifecycleService() {
                 return false
             }
 
-            if (symlinkTarget != null && !symlinkTarget.startsWith("/") &&
-                !resolvedEntry.resolveSibling(symlinkTarget).normalize().startsWith(root)) {
-                Log.e(TAG, "tarball symlink escapes target directory: $entry")
-                return false
+            if (symlinkTarget != null) {
+                val resolvedTarget = if (symlinkTarget.startsWith("/")) {
+                    root.resolve(symlinkTarget.trimStart('/'))
+                } else {
+                    resolvedEntry.resolveSibling(symlinkTarget)
+                }.normalize()
+                if (!resolvedTarget.startsWith(root)) {
+                    Log.e(TAG, "tarball symlink escapes target directory: $entry")
+                    return false
+                }
             }
         }
         return true
