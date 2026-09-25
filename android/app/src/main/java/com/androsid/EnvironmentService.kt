@@ -225,23 +225,16 @@ class EnvironmentService : LifecycleService() {
 
         val root = Paths.get("/rootfs")
         for (entry in entries) {
-            val parts = entry.split(" -> ", limit = 2)
-            val entryPath = parts[0]
+            val (name, symlinkTarget) = entry.split(" -> ", limit = 2).let { it[0] to it.getOrNull(1) }
 
-            if (entryPath.startsWith("/")) {
-                Log.e(TAG, "tarball entry is an absolute path: $entry")
-                return false
-            }
-            val resolvedEntry = root.resolve(entryPath).normalize()
-            if (!resolvedEntry.startsWith(root)) {
+            val resolvedEntry = root.resolve(name).normalize()
+            if (name.startsWith("/") || !resolvedEntry.startsWith(root)) {
                 Log.e(TAG, "tarball entry escapes target directory: $entry")
                 return false
             }
 
-            val symlinkTarget = parts.getOrNull(1) ?: continue
-            if (symlinkTarget.startsWith("/")) continue
-            val resolvedTarget = resolvedEntry.resolveSibling(symlinkTarget).normalize()
-            if (!resolvedTarget.startsWith(root)) {
+            if (symlinkTarget != null && !symlinkTarget.startsWith("/") &&
+                !resolvedEntry.resolveSibling(symlinkTarget).normalize().startsWith(root)) {
                 Log.e(TAG, "tarball symlink escapes target directory: $entry")
                 return false
             }
