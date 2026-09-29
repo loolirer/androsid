@@ -37,7 +37,7 @@ ordinary rootfs content and that's exactly what the app execs via `proot`.
 > recognize an extraction as valid, it needs to go 100% okay (exit code 0),
 > and for that, we need hard dereferencing
 
-`docker/export-rootfs.sh` handles this by extracting to a real
+`docker/export.sh` handles this by extracting to a real
 directory and re-archives with `--hard-dereference`, which turns each
 hardlink into an independent file copy:
 
