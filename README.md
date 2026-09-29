@@ -1,6 +1,6 @@
 # androsid
 
-A ROS 2 development environment that runs on an Android smartphone. It is built from a Dockerfile into a proot container under Termux, and ships with a Kotlin app and a ROS 2 bridge node that publishes the phone's sensor data as hardware stamped messages.
+A self-contained app that ships a ROS 2 development environment for Android with out-of-the-box sensor integration.
 
 <p align="center">
   <img src="assets/androsid.png" alt="androsid logo" width="160">
@@ -10,56 +10,33 @@ A ROS 2 development environment that runs on an Android smartphone. It is built 
 
 ## Building the app
 
-The app is the sensor source: it holds the camera(s), IMU and GPS handles and streams
-them over a localhost socket to the node running in the container.
-
 Open the `androsid/android` folder in Android Studio and hit `Run` with the phone connected
 over USB debugging. Ensure your Android device has `Developer Options` unlocked and
 USB debugging enabled there.
 
-Then launch the app and grant all permissions. There is no UI, so opening the app starts streaming, closing it stops. The notification is your indicator that it's alive.
+This will launch the app on your device. It currently has no UI, so it will present itself with 
+a dark screen. The notifications of the app will act as its liveness indicator.
 
-## Setting up a ROS 2 environment on your device
+## Setting up the ROS 2 environment
 
-Install [Termux](https://f-droid.org/packages/com.termux/) app on your android device, and inside it:
+**1. Get a rootfs tarball.** Build `docker/Dockerfile` and export it with `docker/export.sh`. Check
+[`docker/README.md`](docker/README.md) for the exact steps, including how to customize the
+environment. You'll end up with a `.tar.gz` file.
 
-```bash
-pkg install proot-distro openssh git nano
-echo "pgrep -x sshd >/dev/null || sshd" >> ~/.bashrc
-passwd
-whoami
-```
+**2. Install it on the phone.** From any file manager, `Share` that tarball to androsid. Sharing a tarball 
+at any time tears down whatever's currently running and reinstalls fresh from the new one.
 
-`passwd` sets your ssh password and `whoami` prints your ssh username. The server
-listens on port 8022, so from your computer:
+This will get the ROS 2 environment running! Optionally, you may access it and interact with it 
+as you would with any other remote machine by SSHing into it. The following steps show the how-to.
 
-```bash
-ssh -p 8022 u0_aXXX@<phone-ip>
-```
+**3. Authorize your SSH key.** SSH is pubkey-only. In order to handle your public key to the app, 
+`Share` its file (e.g. `~/.ssh/id_ed25519.pub`) to androsid the same way. It gets appended to 
+`/root/.ssh/authorized_keys` inside the rootfs.
 
-Clone the repo:
-
-```bash
-git clone https://github.com/loolirer/androsid.git && cd androsid
-```
-
-Build the image and access the container (tested on Jazzy, but you may change it via `--build-arg ROS_DISTRO=<distro>`):
+**4. SSH to it:**
 
 ```bash
-proot-distro build -f docker/Dockerfile -t androsid:jazzy --install-as androsid .
-proot-distro login androsid
-```
-
-Alternatively, to ssh directly into the container from your computer on the nexts runs:
-
-```bash
-ssh -p 8022 u0_aXXX@<phone-ip> -t 'proot-distro login androsid'
-```
-
-And run the bridge:
-
-```bash
-ros2 run android_bridge mobile_sensors
+ssh -p 8022 root@<phone-ip>
 ```
 
 ## Usage
@@ -76,11 +53,17 @@ And serves the following service:
 
 - `/set_torch`
 
-You may customize each topic QoS profile by modifying `android_bridge/config/mobile_sensors.yaml`:
+## Customization
 
-```bash
-ros2 run android_bridge mobile_sensors --ros-args --params-file \
-  $(ros2 pkg prefix android_bridge)/share/android_bridge/config/mobile_sensors.yaml
-```
+To adjust usage to your preference, modify:
+
+- **`android_bridge/config/mobile_sensors.yaml`** sets each topic's QoS profile.
+- **`docker/entrypoint.sh`** runs on boot; by default it starts the bridge and `sshd`. Edit it to
+  change what auto-starts.
+- **`docker/ros2.sh`** (`/etc/profile.d/ros2.sh` in the rootfs) sources the ROS 2 workspace overlay
+  for every login shell, and for `entrypoint.sh` itself.
+
+Modifying them on the environment and re-starting the app is enough to apply the changes. Since all 
+are baked into the image at build time, you may also re-build and re-share the tarball to have a custom OotB image.
 
 ---
