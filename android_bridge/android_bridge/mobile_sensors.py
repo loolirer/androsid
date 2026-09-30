@@ -41,6 +41,7 @@ class MobileSensors(LifecycleNode):
         self._sock = None
         self._send_lock = threading.Lock()
         self._thread = None
+        self._unrecognized_cameras = set()
 
     def on_configure(self, state):
         self.host = self.get_parameter("host").value
@@ -81,22 +82,21 @@ class MobileSensors(LifecycleNode):
             SetTorch, "set_torch", self._on_set_torch
         )
 
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
         self.get_logger().info("Configured")
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, state):
         result = super().on_activate(state)
-
-        self._stop.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-        self.get_logger().info("Streaming started")
+        self.get_logger().info("Activated")
         return result
 
     def on_deactivate(self, state):
         result = super().on_deactivate(state)
-        self._stop_streaming()
-        self.get_logger().info("Streaming Stopped")
+        self.get_logger().info("Deactivated")
         return result
 
     def on_cleanup(self, state):
@@ -112,7 +112,10 @@ class MobileSensors(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
-        self._stop_streaming()
+        try:
+            self.trigger_shutdown()
+        except Exception as e:
+            self.get_logger().warn(f"Graceful shutdown failed: {e}")
         return super().destroy_node()
 
     def _stop_streaming(self):
@@ -202,9 +205,11 @@ class MobileSensors(LifecycleNode):
         camera_name = sample.get("camera_name", "default")
         pub = self.pubs.get(f"img_{camera_name}")
         if pub is None:
-            self.get_logger().warn(
-                f"Received frame from unrecognized camera '{camera_name}'", once=True
-            )
+            if camera_name not in self._unrecognized_cameras:
+                self._unrecognized_cameras.add(camera_name)
+                self.get_logger().warn(
+                    f"Received frame from unrecognized camera '{camera_name}'"
+                )
             return
 
         if pub.is_activated:
@@ -217,6 +222,10 @@ class MobileSensors(LifecycleNode):
     def _send_command(self, cmd, params):
         if params is None:
             params = {}
+
+        if self._state_machine.current_state[1] != "active":
+            self.get_logger().warn(f"Cannot send command '{cmd}': node is not active")
+            return False
 
         if self._sock is None:
             self.get_logger().warn("Cannot send command: TCP socket is not connected")
