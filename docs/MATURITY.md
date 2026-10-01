@@ -61,7 +61,6 @@ Whether androsid can operate reliably on a mobile device for realistic periods o
 | **2** | Security-sensitive behaviour is documented and common risks are explicitly mitigated. Includes a Vulnerability Disclosure Policy, per REP-2004 [7.i]. |
 | **3** | Security checks are automated where possible, sensitive dependencies/configurations are monitored, and security regressions can be detected continuously. |
 
-Relevant aspects: Android permissions, network interfaces and exposed ports, validation of data received over the socket, dependency vulnerabilities, protection of sensitive sensor data, secure configuration of the local ROS 2 environment.
 
 ## 5. Testing & Code Quality
 
