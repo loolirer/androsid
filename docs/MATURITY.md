@@ -75,7 +75,7 @@ Prioritizes behaviour critical to the system: sensor data processing, data conve
 | **0** | There is no established testing strategy or consistent code-quality standard. |
 | **1** | Important behaviour can be manually verified and basic coding conventions are followed manually. |
 | **2** | Critical logic has automated tests, and linters/formatters are configured for the relevant languages with their configuration versioned in the repository. |
-| **3** | Tests, linting and formatting are automatically executed in CI and prevent known regressions or quality issues from being merged, per REP-2004's Testing and Change Control Process requirements ([4], [2.iv]). Tracked in #35. |
+| **3** | Tests, linting and formatting are automatically executed in CI and prevent known regressions or quality issues from being merged, per REP-2004's Testing and Change Control Process requirements ([4], [2.iv]).|
 
 
 ## 6. Architecture & Reproducibility
