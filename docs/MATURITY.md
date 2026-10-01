@@ -54,6 +54,8 @@ Whether androsid can operate reliably on a mobile device for realistic periods o
 
 *Partially maps to REP-2004 [Security, 7.i]: a declared Vulnerability Disclosure Policy. androsid adds mobile-specific concerns REP-2004 doesn't address.*
 
+Covers Android permissions, network interfaces and exposed ports, validation of data received over the socket, dependency vulnerabilities, protection of sensitive sensor data, secure configuration of the local ROS 2 environment.
+
 | Level | Criteria |
 |---|---|
 | **0** | Security considerations are not explicitly addressed. |
