@@ -106,17 +106,6 @@ How understandable the system is and how easily another developer can reproduce 
 
 ## How the matrix should be used
 
-Each dimension is evaluated independently, this is a roadmap, not a single score:
-
-```text
-Sensor & ROS 2 Integration           → Level N
-Communication & Error Handling       → Level N
-Reliability & Performance            → Level N
-Security                             → Level N
-Testing & Code Quality               → Level N
-Architecture & Reproducibility       → Level N
-Documentation & Developer Experience → Level N
-```
 
 Current state is tracked on the project's GitHub Project board, with one card per dimension. Each level-up is a concrete issue, e.g.:
 
