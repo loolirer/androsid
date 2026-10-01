@@ -66,7 +66,7 @@ Covers Android permissions, network interfaces and exposed ports, validation of 
 
 ## 5. Testing & Code Quality
 
-*Maps to REP-2004 [Testing, 4] and [Change Control Process, 2.iv] (CI). Deferred to a lighter bar for now —> see phase note above and #35.*
+*Maps to REP-2004 [Testing, 4] and [Change Control Process, 2.iv] (CI).*
 
 Prioritizes behaviour critical to the system: sensor data processing, data conversion, message serialization/parsing, communication, error handling, ROS 2 interfaces.
 
