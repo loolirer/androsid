@@ -77,7 +77,6 @@ Prioritizes behaviour critical to the system: sensor data processing, data conve
 | **2** | Critical logic has automated tests, and linters/formatters are configured for the relevant languages with their configuration versioned in the repository. |
 | **3** | Tests, linting and formatting are automatically executed in CI and prevent known regressions or quality issues from being merged, per REP-2004's Testing and Change Control Process requirements ([4], [2.iv]). Tracked in #35. |
 
-Testing should prioritize behaviour critical to the system: sensor data processing, data conversion, message serialization/parsing, communication, error handling, ROS 2 interfaces.
 
 ## 6. Architecture & Reproducibility
 
