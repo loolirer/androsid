@@ -14,6 +14,7 @@ object ProotLauncher {
     ): Process {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
         val socketDir = File(context.filesDir, "run").apply { mkdirs() }
+        Os.chmod(socketDir.absolutePath, "700".toInt(8))
         val libDir = File(context.filesDir, "proot-lib").apply { mkdirs() }
         val tmpDir = File(context.filesDir, "proot-tmp").apply { mkdirs() }
         val shmDir = File(context.filesDir, "rootfs-shm").apply { mkdirs() }

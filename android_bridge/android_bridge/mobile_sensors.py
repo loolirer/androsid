@@ -150,7 +150,10 @@ class MobileSensors(LifecycleNode):
                 self.get_logger().info("Connecting to socket...")
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
-                self._sock = sock
+                with self._send_lock:
+                    if self._stop.is_set():
+                        break
+                    self._sock = sock
                 self.get_logger().info("Connected!")
 
                 self._consume(sock)

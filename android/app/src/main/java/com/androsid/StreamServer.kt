@@ -8,6 +8,7 @@ import android.system.OsConstants
 import android.util.Log
 import java.io.BufferedReader
 import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStream
 import kotlin.concurrent.thread
@@ -118,7 +119,7 @@ class StreamServer(
     private fun writeTo(c: Client, line: ByteArray) {
         try {
             synchronized(c) { c.out.write(line) }
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             Log.i(TAG, "client dropped: ${e.message}")
             dropClient(c)
         }
