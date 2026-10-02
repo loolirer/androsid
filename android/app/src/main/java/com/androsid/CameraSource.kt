@@ -87,7 +87,7 @@ class CameraSource(
                 write(FRAME_SUFFIX)
             }.toByteArray()
 
-            server.broadcastLine(line)
+            server.sendLine(line)
         } catch (e: Exception) {
             Log.e(TAG, "frame encode failed for camera '$cameraName'", e)
         } finally {

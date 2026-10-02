@@ -1,30 +1,34 @@
 package com.androsid
 
+import android.net.LocalServerSocket
+import android.net.LocalSocket
+import android.net.LocalSocketAddress
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
-import java.io.BufferedOutputStream
 import java.io.BufferedReader
+import java.io.File
+import java.io.IOException
 import java.io.InputStreamReader
-import java.net.ServerSocket
-import java.net.Socket
+import java.io.OutputStream
 import kotlin.concurrent.thread
 
 class StreamServer(
-    private val port: Int,
-    private val idleTimeoutMs: Long = 1000L,
+    private val socketFile: File,
     private val onCommandReceived: ((String) -> Unit)? = null
 ) {
 
     companion object {
         private const val TAG = "StreamServer"
+        private const val RETRY_DELAY_MS = 1000L
     }
 
-    private class Client(val socket: Socket) {
-        val out = BufferedOutputStream(socket.getOutputStream(), 64 * 1024)
-        @Volatile var lastSeenAt: Long = System.currentTimeMillis()
+    private class Client(val socket: LocalSocket) {
+        val out: OutputStream = socket.outputStream
     }
 
     @Volatile private var client: Client? = null
-    private var server: ServerSocket? = null
+    @Volatile private var server: LocalSocket? = null
     @Volatile private var running = false
 
     fun start() {
@@ -33,82 +37,89 @@ class StreamServer(
         thread(name = "androsid-accept", isDaemon = true) {
             while (running) {
                 try {
-                    ServerSocket(port).use { srv ->
-                        server = srv
-                        Log.i(TAG, "listening on 0.0.0.0:$port")
-                        val sock = srv.accept()
-                        sock.tcpNoDelay = true
-
-                        val currentClient = Client(sock)
-                        this.client = currentClient
-                        Log.i(TAG, "client connected: ${sock.inetAddress}")
-
-                        thread(name="androsid-reader-${sock.port}", isDaemon = true) {
-                            try {
-                                val reader = BufferedReader(InputStreamReader(sock.getInputStream(), Charsets.UTF_8))
-                                while (running && !sock.isClosed) {
-                                    val line = reader.readLine() ?: break
-                                    if (line.isNotBlank()) {
-                                        currentClient.lastSeenAt = System.currentTimeMillis()
-                                        onCommandReceived?.invoke(line)
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                if (running) { 
-                                    Log.i(TAG, "Client read ended: ${e.message}") 
-                                }
-                            } finally {
-                                dropClient(currentClient)
+                    bindListener().use { listener ->
+                        server = listener
+                        Log.i(TAG, "listening on '${socketFile.absolutePath}'")
+                        val acceptor = LocalServerSocket(listener.fileDescriptor)
+                        while (running) {
+                            val sock = acceptor.accept()
+                            if (!running) {
+                                sock.close()
+                                break
                             }
+                            serve(Client(sock))
                         }
                     }
-
-                    while (running && client != null) Thread.sleep(idleTimeoutMs)
                 } catch (e: Exception) {
-                    if (running) Log.e(TAG, "accept loop died", e)
+                    if (running) {
+                        Log.e(TAG, "accept loop died", e)
+                        Thread.sleep(RETRY_DELAY_MS)
+                    }
                 }
             }
         }
+    }
 
-        thread(name = "androsid-watchdog", isDaemon = true) {
-            while (running) {
-                Thread.sleep(idleTimeoutMs)
-                val c = client ?: continue
+    private fun serve(newClient: Client) {
+        val previous = synchronized(this) {
+            client.also { client = newClient }
+        }
+        previous?.let {
+            Log.i(TAG, "replacing previous client")
+            dropClient(it)
+        }
+        Log.i(TAG, "client connected")
 
-                val idleMs = System.currentTimeMillis() - c.lastSeenAt
-                if (idleMs > idleTimeoutMs) {
-                    Log.w(TAG, "client timed out after ${idleMs}ms idle; disconnecting")
-                    dropClient(c)
+        thread(name = "androsid-reader", isDaemon = true) {
+            try {
+                val reader = BufferedReader(InputStreamReader(newClient.socket.inputStream, Charsets.UTF_8))
+                while (running) {
+                    val line = reader.readLine() ?: break
+                    if (line.isNotBlank()) onCommandReceived?.invoke(line)
                 }
+            } catch (e: Exception) {
+                if (running) {
+                    Log.i(TAG, "client read ended: ${e.message}")
+                }
+            } finally {
+                dropClient(newClient)
             }
+        }
+    }
+
+    private fun bindListener(): LocalSocket {
+        socketFile.parentFile?.mkdirs()
+        socketFile.delete()
+        return LocalSocket(LocalSocket.SOCKET_STREAM).apply {
+            bind(LocalSocketAddress(socketFile.absolutePath, LocalSocketAddress.Namespace.FILESYSTEM))
         }
     }
 
     fun stop() {
         running = false
-        try { server?.close() } catch (_: Exception) {}
-        client?.let { try { it.socket.close() } catch (_: Exception) {} }
-        client = null
+        server?.let { srv ->
+            try { Os.shutdown(srv.fileDescriptor, OsConstants.SHUT_RDWR) } catch (_: Exception) {}
+            try { srv.close() } catch (_: Exception) {}
+        }
+        server = null
+        socketFile.delete()
+        client?.let { dropClient(it) }
     }
 
     fun isConnected(): Boolean = client != null
 
-    fun broadcast(json: String) =
-        broadcastLine((json + "\n").toByteArray(Charsets.UTF_8))
+    fun send(json: String) =
+        sendLine((json + "\n").toByteArray(Charsets.UTF_8))
 
-    fun broadcastLine(line: ByteArray) {
+    fun sendLine(line: ByteArray) {
         val c = client ?: return
         writeTo(c, line)
     }
 
     private fun writeTo(c: Client, line: ByteArray) {
         try {
-            synchronized(c) {
-                c.out.write(line)
-                c.out.flush()
-            }
-            c.lastSeenAt = System.currentTimeMillis()
-        } catch (e: Exception) {
+            synchronized(c) { c.out.write(line) }
+        } catch (e: IOException) {
             Log.i(TAG, "client dropped: ${e.message}")
             dropClient(c)
         }
@@ -118,6 +129,8 @@ class StreamServer(
         synchronized(this) {
             if (client === c) client = null
         }
+        try { c.socket.shutdownInput() } catch (_: Exception) {}
+        try { c.socket.shutdownOutput() } catch (_: Exception) {}
         try { c.socket.close() } catch (_: Exception) {}
     }
 }

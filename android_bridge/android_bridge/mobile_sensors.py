@@ -28,8 +28,6 @@ class MobileSensors(LifecycleNode):
     def __init__(self):
         super().__init__("mobile_sensors")
 
-        self.declare_parameter("host", "127.0.0.1")
-        self.declare_parameter("port", 9870)
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
         self.declare_parameter("camera_names", Parameter.Type.STRING_ARRAY)
@@ -38,14 +36,15 @@ class MobileSensors(LifecycleNode):
         self.srvs = {}
 
         self._stop = threading.Event()
-        self._sock = None
         self._send_lock = threading.Lock()
         self._thread = None
+
+        self._sock = None
+        self._sock_address = "/run/androsid/mobile_sensors.sock"
+
         self._unrecognized_cameras = set()
 
     def on_configure(self, state):
-        self.host = self.get_parameter("host").value
-        self.port = self.get_parameter("port").value
         self.imu_frame = self.get_parameter("imu_frame").value
         self.gps_frame = self.get_parameter("gps_frame").value
         self.camera_names = self.get_parameter("camera_names").value
@@ -121,7 +120,8 @@ class MobileSensors(LifecycleNode):
     def _stop_streaming(self):
         self._stop.set()
 
-        sock, self._sock = self._sock, None
+        with self._send_lock:
+            sock, self._sock = self._sock, None
         if sock is not None:
             try:
                 sock.shutdown(socket.SHUT_RDWR)
@@ -129,9 +129,9 @@ class MobileSensors(LifecycleNode):
                 pass
 
         if self._thread is not None:
-            self._thread.join(timeout=2.0)
+            self._thread.join(timeout=1.0)
             if self._thread.is_alive():
-                self.get_logger().warn("Reader thread still running after 2s")
+                self.get_logger().warn("Reader thread still running after 1s")
             self._thread = None
 
     def _destroy_resources(self):
@@ -145,26 +145,30 @@ class MobileSensors(LifecycleNode):
 
     def _run(self):
         while not self._stop.is_set() and rclpy.ok():
+            sock = None
             try:
-                self.get_logger().info(f"Connecting to {self.host}:{self.port}")
-                with socket.create_connection(
-                    (self.host, self.port), timeout=10
-                ) as sock:
-                    sock.settimeout(None)
-                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.get_logger().info("Connecting to socket...")
+                sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                sock.connect(self._sock_address)
+                with self._send_lock:
+                    if self._stop.is_set():
+                        break
                     self._sock = sock
-                    self.get_logger().info("Connected!")
+                self.get_logger().info("Connected!")
 
-                    self._consume(sock)
+                self._consume(sock)
 
             except OSError as e:
                 if self._stop.is_set():
                     break
-                self.get_logger().warn(f"Connection failed: {e}; retrying in 2s")
-                self._stop.wait(2.0)
+                self.get_logger().warn(f"Socket error: {e}; retrying in 1s")
+                self._stop.wait(1.0)
 
             finally:
-                self._sock = None
+                with self._send_lock:
+                    self._sock = None
+                if sock is not None:
+                    sock.close()
 
     def _consume(self, sock):
         stream = sock.makefile("r", encoding="utf-8", newline="\n")
@@ -176,8 +180,13 @@ class MobileSensors(LifecycleNode):
             if not line:
                 continue
 
-            sample = json.loads(line)
-            sample_type = sample.get("type")
+            try:
+                sample = json.loads(line)
+                sample_type = sample.get("type")
+            except (ValueError, AttributeError) as e:
+                self.get_logger().warn(f"Dropping malformed sample: {e}")
+                continue
+
             if sample_type == "imu":
                 self._on_imu(sample)
             elif sample_type == "mag":
@@ -227,10 +236,6 @@ class MobileSensors(LifecycleNode):
             self.get_logger().warn(f"Cannot send command '{cmd}': node is not active")
             return False
 
-        if self._sock is None:
-            self.get_logger().warn("Cannot send command: TCP socket is not connected")
-            return False
-
         payload = {"cmd": cmd}
         payload.update(params)
         cmd_bytes = (json.dumps(payload) + "\n").encode("utf-8")
@@ -239,10 +244,11 @@ class MobileSensors(LifecycleNode):
             with self._send_lock:
                 sock = self._sock
                 if sock is None:
-                    raise OSError("Socket disconnected")
+                    self.get_logger().warn("Cannot send command: socket is not connected")
+                    return False
                 sock.sendall(cmd_bytes)
             return True
-        except (OSError, AttributeError) as e:
+        except OSError as e:
             self.get_logger().error(f"Failed to send command '{cmd}': {e}")
             return False
 

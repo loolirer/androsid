@@ -38,11 +38,11 @@ import androidx.lifecycle.LifecycleService
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.os.BatteryManager
+import java.io.File
 
 class SensorService : LifecycleService(), SensorEventListener, LocationListener {
 
     companion object {
-        const val PORT = 9870
         private const val TAG = "SensorService"
         private const val CHANNEL_ID = "androsid_stream"
         private const val NOTIF_ID = 1
@@ -71,7 +71,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(PORT) {
+        server = StreamServer(File(filesDir, "run/mobile_sensors.sock")) {
             rawCommand -> handleCommand(rawCommand)
         }
         server.start()
@@ -306,7 +306,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
                 val t = SystemClock.elapsedRealtimeNanos() + bootToEpochNanos
 
-                server.broadcast(
+                server.send(
                     """{"type":"battery","stamp":$t,"voltage":$voltage,"temperature":$temperature,"current":$current,"percentage":$percentage,"status":"$status","health":"$health","present":$present,"technology":"$technology"}"""
                 )
             }
@@ -325,13 +325,13 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             Sensor.TYPE_GYROSCOPE -> {
                 val accel = lastAccel ?: return
                 val t = event.timestamp + bootToEpochNanos
-                server.broadcast(
+                server.send(
                     """{"type":"imu","stamp":$t,"accel":[${accel[0]},${accel[1]},${accel[2]}],"gyro":[${event.values[0]},${event.values[1]},${event.values[2]}]}"""
                 )
             }
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 val t = event.timestamp + bootToEpochNanos
-                server.broadcast(
+                server.send(
                     """{"type":"mag","stamp":$t,"mag":[${event.values[0] * MAG_SCALE},${event.values[1] * MAG_SCALE},${event.values[2] * MAG_SCALE}]}"""
                 )
             }
@@ -351,7 +351,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             Log.i(TAG, "first fix from '${loc.provider}', accuracy ${loc.accuracy} m")
         }
 
-        server.broadcast(
+        server.send(
             """{"type":"gps","stamp":$t,"latitude":${loc.latitude},"longitude":${loc.longitude},""" +
             """"altitude":${loc.altitude},"accuracy":${loc.accuracy},"vertical_accuracy":$vertAcc,""" +
             """"speed":${loc.speed},"bearing":${loc.bearing},""" +
@@ -382,7 +382,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("androsid")
-            .setContentText("Streaming sensors on port $PORT")
+            .setContentText("Streaming sensors")
             .setSmallIcon(android.R.drawable.stat_notify_sync)
             .setOngoing(true)
             .setContentIntent(tap)
