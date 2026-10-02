@@ -23,13 +23,14 @@ from sensor_msgs.msg import (
     CompressedImage,
     Imu,
     MagneticField,
-    NavSatFix,                         
+    NavSatFix,
 )
+
 
 class MobileSensors(LifecycleNode):
 
     def __init__(self):
-        super().__init__("mobile_sensors")
+        super().__init__('mobile_sensors')
 
         self.declare_parameter("imu_frame", "imu_link")
         self.declare_parameter("gps_frame", "gps_link")
@@ -60,64 +61,64 @@ class MobileSensors(LifecycleNode):
                 QoSPolicyKind.DEPTH,
             )
         )
-        self.pubs["imu"] = self.create_lifecycle_publisher(
-            Imu, "imu/data_raw", 10, qos_overriding_options=self.qos_overrides
+        self.pubs['imu'] = self.create_lifecycle_publisher(
+            Imu, 'imu/data_raw', 10, qos_overriding_options=self.qos_overrides
         )
-        self.pubs["mag"] = self.create_lifecycle_publisher(
-            MagneticField, "imu/mag", 10, qos_overriding_options=self.qos_overrides
+        self.pubs['mag'] = self.create_lifecycle_publisher(
+            MagneticField, 'imu/mag', 10, qos_overriding_options=self.qos_overrides
         )
-        self.pubs["gps"] = self.create_lifecycle_publisher(
-            NavSatFix, "gps/fix", 10, qos_overriding_options=self.qos_overrides
+        self.pubs['gps'] = self.create_lifecycle_publisher(
+            NavSatFix, 'gps/fix', 10, qos_overriding_options=self.qos_overrides
         )
-        self.pubs["battery"] = self.create_lifecycle_publisher(
-            BatteryState, "battery_state", 10, qos_overriding_options=self.qos_overrides
+        self.pubs['battery'] = self.create_lifecycle_publisher(
+            BatteryState, 'battery_state', 10, qos_overriding_options=self.qos_overrides
         )
         for camera_name in self.camera_names:
-            self.pubs[f"img_{camera_name}"] = self.create_lifecycle_publisher(
+            self.pubs[f'img_{camera_name}'] = self.create_lifecycle_publisher(
                 CompressedImage,
-                f"camera/{camera_name}/image_raw/compressed",
+                f'camera/{camera_name}/image_raw/compressed',
                 10,
                 qos_overriding_options=self.qos_overrides,
             )
 
-        self.srvs["torch"] = self.create_service(
-            SetTorch, "set_torch", self._on_set_torch
+        self.srvs['torch'] = self.create_service(
+            SetTorch, 'set_torch', self._on_set_torch
         )
 
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-        self.get_logger().info("Configured")
+        self.get_logger().info('Configured')
         return TransitionCallbackReturn.SUCCESS
 
     def on_activate(self, state):
         result = super().on_activate(state)
-        self.get_logger().info("Activated")
+        self.get_logger().info('Activated')
         return result
 
     def on_deactivate(self, state):
         result = super().on_deactivate(state)
-        self.get_logger().info("Deactivated")
+        self.get_logger().info('Deactivated')
         return result
 
     def on_cleanup(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info("Cleaned Up")
+        self.get_logger().info('Cleaned Up')
         return TransitionCallbackReturn.SUCCESS
 
     def on_shutdown(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info("Shut Down")
+        self.get_logger().info('Shut Down')
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
         try:
             self.trigger_shutdown()
         except Exception as e:
-            self.get_logger().warn(f"Graceful shutdown failed: {e}")
+            self.get_logger().warn(f'Graceful shutdown failed: {e}')
         return super().destroy_node()
 
     def _stop_streaming(self):
@@ -134,7 +135,7 @@ class MobileSensors(LifecycleNode):
         if self._thread is not None:
             self._thread.join(timeout=1.0)
             if self._thread.is_alive():
-                self.get_logger().warn("Reader thread still running after 1s")
+                self.get_logger().warn('Reader thread still running after 1s')
             self._thread = None
 
     def _destroy_resources(self):
@@ -164,7 +165,7 @@ class MobileSensors(LifecycleNode):
             except OSError as e:
                 if self._stop.is_set():
                     break
-                self.get_logger().warn(f"Socket error: {e}; retrying in 1s")
+                self.get_logger().warn(f'Connection failed: {e}; retrying in 2s')
                 self._stop.wait(1.0)
 
             finally:
@@ -174,11 +175,11 @@ class MobileSensors(LifecycleNode):
                     sock.close()
 
     def _consume(self, sock):
-        stream = sock.makefile("r", encoding="utf-8", newline="\n")
+        stream = sock.makefile('r', encoding='utf-8', newline='\n')
         while not self._stop.is_set():
             line = stream.readline()
             if not line:
-                raise ConnectionError("Stream closed")
+                raise ConnectionError('Stream closed')
             line = line.strip()
             if not line:
                 continue
@@ -192,56 +193,56 @@ class MobileSensors(LifecycleNode):
 
             if sample_type == "imu":
                 self._on_imu(sample)
-            elif sample_type == "mag":
+            elif sample_type == 'mag':
                 self._on_mag(sample)
-            elif sample_type == "gps":
+            elif sample_type == 'gps':
                 self._on_gps(sample)
-            elif sample_type == "frame":
+            elif sample_type == 'frame':
                 self._on_frame(sample)
-            elif sample_type == "battery":
+            elif sample_type == 'battery':
                 self._on_battery(sample)
 
     def _on_imu(self, sample):
-        if self.pubs["imu"].is_activated:
-            self.pubs["imu"].publish(imu_msg(sample, self.imu_frame))
+        if self.pubs['imu'].is_activated:
+            self.pubs['imu'].publish(imu_msg(sample, self.imu_frame))
 
     def _on_mag(self, sample):
-        if self.pubs["mag"].is_activated:
-            self.pubs["mag"].publish(mag_msg(sample, self.imu_frame))
+        if self.pubs['mag'].is_activated:
+            self.pubs['mag'].publish(mag_msg(sample, self.imu_frame))
 
     def _on_gps(self, sample):
-        if self.pubs["gps"].is_activated:
-            self.pubs["gps"].publish(gps_msg(sample, self.gps_frame))
+        if self.pubs['gps'].is_activated:
+            self.pubs['gps'].publish(gps_msg(sample, self.gps_frame))
 
     def _on_frame(self, sample):
-        camera_name = sample.get("camera_name", "default")
-        pub = self.pubs.get(f"img_{camera_name}")
+        camera_name = sample.get('camera_name', 'default')
+        pub = self.pubs.get(f'img_{camera_name}')
         if pub is None:
             if camera_name not in self._unrecognized_cameras:
                 self._unrecognized_cameras.add(camera_name)
                 self.get_logger().warn(
-                    f"Received frame from unrecognized camera '{camera_name}'"
+                    f'Received frame from unrecognized camera "{camera_name}"'
                 )
             return
 
         if pub.is_activated:
-            pub.publish(frame_msg(sample, f"camera_{camera_name}_optical_frame"))
+            pub.publish(frame_msg(sample, f'camera_{camera_name}_optical_frame'))
 
     def _on_battery(self, sample):
-        if self.pubs["battery"].is_activated:
-            self.pubs["battery"].publish(battery_msg(sample))
+        if self.pubs['battery'].is_activated:
+            self.pubs['battery'].publish(battery_msg(sample))
 
     def _send_command(self, cmd, params):
         if params is None:
             params = {}
 
-        if self._state_machine.current_state[1] != "active":
-            self.get_logger().warn(f"Cannot send command '{cmd}': node is not active")
+        if self._state_machine.current_state[1] != 'active':
+            self.get_logger().warn(f'Cannot send command "{cmd}": node is not active')
             return False
 
         payload = {"cmd": cmd}
         payload.update(params)
-        cmd_bytes = (json.dumps(payload) + "\n").encode("utf-8")
+        cmd_bytes = (json.dumps(payload) + '\n').encode('utf-8')
 
         try:
             with self._send_lock:
@@ -256,7 +257,7 @@ class MobileSensors(LifecycleNode):
             return False
 
     def _on_set_torch(self, request, response):
-        response.success = self._send_command("torch", {"enabled": request.data})
+        response.success = self._send_command('torch', {'enabled': request.data})
         return response
 
 
@@ -273,5 +274,5 @@ def main(args=None):
             rclpy.shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

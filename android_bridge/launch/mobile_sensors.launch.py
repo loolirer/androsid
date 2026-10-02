@@ -13,16 +13,16 @@ from lifecycle_msgs.msg import Transition
 
 def generate_launch_description():
     params_file = os.path.join(
-        get_package_share_directory("android_bridge"),
-        "config",
-        "mobile_sensors.yaml",
+        get_package_share_directory('android_bridge'),
+        'config',
+        'mobile_sensors.yaml',
     )
 
     mobile_sensors_node = LifecycleNode(
-        package="android_bridge",
-        executable="mobile_sensors",
-        name="mobile_sensors",
-        namespace="",
+        package='android_bridge',
+        executable='mobile_sensors',
+        name='mobile_sensors',
+        namespace='',
         parameters=[params_file],
     )
 
@@ -43,7 +43,7 @@ def generate_launch_description():
     activate_on_configured = RegisterEventHandler(
         OnStateTransition(
             target_lifecycle_node=mobile_sensors_node,
-            goal_state="inactive",
+            goal_state='inactive',
             entities=[
                 EmitEvent(
                     event=ChangeState(
