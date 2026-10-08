@@ -1,6 +1,6 @@
 # android_interfaces
 
-Custom ROS 2 message and service definitions for the AndroSID project.
+Custom ROS 2 message and service definitions for the Androsid project.
 
 ---
 
