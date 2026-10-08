@@ -1,5 +1,6 @@
 import json
 import socket
+import sys
 import threading
 
 import rclpy
@@ -43,6 +44,8 @@ class MobileSensors(LifecycleNode):
         self._sock_address = "/run/androsid/mobile_sensors.sock"
 
         self._unrecognized_cameras = set()
+
+        self.failed = False
 
     def on_configure(self, state):
         self.imu_frame = self.get_parameter("imu_frame").value
@@ -187,16 +190,26 @@ class MobileSensors(LifecycleNode):
                 self.get_logger().warn(f"Dropping malformed sample: {e}")
                 continue
 
-            if sample_type == "imu":
-                self._on_imu(sample)
-            elif sample_type == "mag":
-                self._on_mag(sample)
-            elif sample_type == "gps":
-                self._on_gps(sample)
-            elif sample_type == "frame":
-                self._on_frame(sample)
-            elif sample_type == "battery":
-                self._on_battery(sample)
+            try:
+                if sample_type == "imu":
+                    self._on_imu(sample)
+                elif sample_type == "mag":
+                    self._on_mag(sample)
+                elif sample_type == "gps":
+                    self._on_gps(sample)
+                elif sample_type == "frame":
+                    self._on_frame(sample)
+                elif sample_type == "battery":
+                    self._on_battery(sample)
+            except (KeyError, TypeError, ValueError) as e:
+                self.get_logger().fatal(
+                    f"Can't convert '{sample_type}' sample ({e!r}), app and bridge "
+                    f"are probably on different versions: {line[:200]}"
+                )
+                self.failed = True
+                self._stop.set()
+                self.context.try_shutdown()
+                return
 
     def _on_imu(self, sample):
         if self.pubs["imu"].is_activated:
@@ -268,6 +281,9 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
+    if node.failed:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
