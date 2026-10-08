@@ -46,9 +46,9 @@ class MobileSensors(LifecycleNode):
     def __init__(self):
         super().__init__('mobile_sensors')
 
-        self.declare_parameter("imu_frame", "imu_link")
-        self.declare_parameter("gps_frame", "gps_link")
-        self.declare_parameter("camera_names", Parameter.Type.STRING_ARRAY)
+        self.declare_parameter('imu_frame', 'imu_link')
+        self.declare_parameter('gps_frame', 'gps_link')
+        self.declare_parameter('camera_names', Parameter.Type.STRING_ARRAY)
 
         self.pubs = {}
         self.srvs = {}
@@ -58,14 +58,14 @@ class MobileSensors(LifecycleNode):
         self._thread = None
 
         self._sock = None
-        self._sock_address = "/run/androsid/mobile_sensors.sock"
+        self._sock_address = '/run/androsid/mobile_sensors.sock'
 
         self._unrecognized_cameras = set()
 
     def on_configure(self, state):
-        self.imu_frame = self.get_parameter("imu_frame").value
-        self.gps_frame = self.get_parameter("gps_frame").value
-        self.camera_names = self.get_parameter("camera_names").value
+        self.imu_frame = self.get_parameter('imu_frame').value
+        self.gps_frame = self.get_parameter('gps_frame').value
+        self.camera_names = self.get_parameter('camera_names').value
 
         self.qos_overrides = QoSOverridingOptions(
             policy_kinds=(
@@ -165,14 +165,14 @@ class MobileSensors(LifecycleNode):
         while not self._stop.is_set() and rclpy.ok():
             sock = None
             try:
-                self.get_logger().info("Connecting to socket...")
+                self.get_logger().info('Connecting to socket...')
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
                 with self._send_lock:
                     if self._stop.is_set():
                         break
                     self._sock = sock
-                self.get_logger().info("Connected!")
+                self.get_logger().info('Connected!')
 
                 self._consume(sock)
 
@@ -200,12 +200,12 @@ class MobileSensors(LifecycleNode):
 
             try:
                 sample = json.loads(line)
-                sample_type = sample.get("type")
+                sample_type = sample.get('type')
             except (ValueError, AttributeError) as e:
-                self.get_logger().warn(f"Dropping malformed sample: {e}")
+                self.get_logger().warn(f'Dropping malformed sample: {e}')
                 continue
 
-            if sample_type == "imu":
+            if sample_type == 'imu':
                 self._on_imu(sample)
             elif sample_type == 'mag':
                 self._on_mag(sample)
@@ -235,7 +235,7 @@ class MobileSensors(LifecycleNode):
             if camera_name not in self._unrecognized_cameras:
                 self._unrecognized_cameras.add(camera_name)
                 self.get_logger().warn(
-                    f'Received frame from unrecognized camera "{camera_name}"'
+                    f'Received frame from unrecognized camera '{camera_name}''
                 )
             return
 
@@ -251,10 +251,10 @@ class MobileSensors(LifecycleNode):
             params = {}
 
         if self._state_machine.current_state[1] != 'active':
-            self.get_logger().warn(f'Cannot send command "{cmd}": node is not active')
+            self.get_logger().warn(f'Cannot send command '{cmd}': node is not active')
             return False
 
-        payload = {"cmd": cmd}
+        payload = {'cmd': cmd}
         payload.update(params)
         cmd_bytes = (json.dumps(payload) + '\n').encode('utf-8')
 
@@ -262,12 +262,12 @@ class MobileSensors(LifecycleNode):
             with self._send_lock:
                 sock = self._sock
                 if sock is None:
-                    self.get_logger().warn("Cannot send command: socket is not connected")
+                    self.get_logger().warn('Cannot send command: socket is not connected')
                     return False
                 sock.sendall(cmd_bytes)
             return True
         except OSError as e:
-            self.get_logger().error(f"Failed to send command '{cmd}': {e}")
+            self.get_logger().error(f'Failed to send command '{cmd}': {e}')
             return False
 
     def _on_set_torch(self, request, response):
