@@ -235,7 +235,7 @@ class MobileSensors(LifecycleNode):
             if camera_name not in self._unrecognized_cameras:
                 self._unrecognized_cameras.add(camera_name)
                 self.get_logger().warn(
-                    f'Received frame from unrecognized camera '{camera_name}''
+                    f'Received frame from unrecognized camera "{camera_name}"'
                 )
             return
 
@@ -251,7 +251,7 @@ class MobileSensors(LifecycleNode):
             params = {}
 
         if self._state_machine.current_state[1] != 'active':
-            self.get_logger().warn(f'Cannot send command '{cmd}': node is not active')
+            self.get_logger().warn(f'Cannot send command "{cmd}": node is not active')
             return False
 
         payload = {'cmd': cmd}
@@ -267,7 +267,7 @@ class MobileSensors(LifecycleNode):
                 sock.sendall(cmd_bytes)
             return True
         except OSError as e:
-            self.get_logger().error(f'Failed to send command '{cmd}': {e}')
+            self.get_logger().error(f'Failed to send command "{cmd}": {e}')
             return False
 
     def _on_set_torch(self, request, response):
