@@ -143,8 +143,8 @@ class MobileSensors(LifecycleNode):
         if sock is not None:
             try:
                 sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
+            except OSError as e:
+                self.get_logger().debug(f"Could not shutdown socket: {e}")
 
         if self._thread is not None:
             self._thread.join(timeout=1.0)
@@ -165,21 +165,22 @@ class MobileSensors(LifecycleNode):
         while not self._stop.is_set() and rclpy.ok():
             sock = None
             try:
-                self.get_logger().info('Connecting to socket...')
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
                 with self._send_lock:
                     if self._stop.is_set():
                         break
                     self._sock = sock
-                self.get_logger().info('Connected!')
+                self.get_logger().info('Bridge connected!')
 
                 self._consume(sock)
 
             except OSError as e:
                 if self._stop.is_set():
                     break
-                self.get_logger().warn(f'Connection failed: {e}; retrying in 2s')
+                self.get_logger().warn(
+                    f'Socket error: {e}; retrying...', throttle_duration_sec=5.0
+                )
                 self._stop.wait(1.0)
 
             finally:
@@ -202,7 +203,10 @@ class MobileSensors(LifecycleNode):
                 sample = json.loads(line)
                 sample_type = sample.get('type')
             except (ValueError, AttributeError) as e:
-                self.get_logger().warn(f'Dropping malformed sample: {e}')
+                self.get_logger().warn(
+                    f'Dropping malformed sample: {e}',
+                    throttle_duration_sec=5.0,
+                )
                 continue
 
             if sample_type == 'imu':
@@ -262,7 +266,9 @@ class MobileSensors(LifecycleNode):
             with self._send_lock:
                 sock = self._sock
                 if sock is None:
-                    self.get_logger().warn('Cannot send command: socket is not connected')
+                    self.get_logger().warn(
+                        f'Cannot send command {cmd!r}: socket is not connected'
+                    )
                     return False
                 sock.sendall(cmd_bytes)
             return True
