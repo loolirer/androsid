@@ -134,7 +134,7 @@ class MobileSensors(LifecycleNode):
 
     def _destroy_resources(self):
         for pub in self.pubs.values():
-            self.destroy_publisher(pub)
+            self.destroy_lifecycle_publisher(pub)
         self.pubs.clear()
 
         for srv in self.srvs.values():
