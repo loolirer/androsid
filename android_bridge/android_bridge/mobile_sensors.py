@@ -142,7 +142,7 @@ class MobileSensors(LifecycleNode):
             try:
                 sock.shutdown(socket.SHUT_RDWR)
             except OSError as e:
-                self.get_logger().debug(f"Could not shutdown socket: {e}")
+                self.get_logger().debug(f'Could not shutdown socket: {e}')
 
         if self._thread is not None:
             self._thread.join(timeout=1.0)
