@@ -1,10 +1,7 @@
 **Issues and Task Tracking**: Before opening any Pull Request, discuss the design and scope in a GitHub issue first.
 **Feature Branches**: Create focused branches off `main` targeting the specific task or feature.
 **Atomic Changes**: Keep Pull Requests focused and minimal. Avoid combining large refactoring or linting diffs with functional feature implementations.
-
-**REP-103**: Standard units of measure and coordinate system conventions must be respected (e.g., Forward-Left-Up body frames and SI units).
-
-**Package Filesystem Layout**: Packages must conform to standard ROS 2 [filesystem layouts](https://docs.ros.org/en/foxy/The-ROS2-Project/Contributing/Developer-Guide.html#filesystem-layout).
+**ROS 2 Developer Guide**: Follow the official [ROS 2 Developer Guide](https://docs.ros.org/en/rolling/The-ROS2-Project/Contributing/Developer-Guide.html) standards and best practices.
 
 All packages enforce the ROS 2 linter suite via `ament_lint_common` and `ament_lint_auto`.
 
