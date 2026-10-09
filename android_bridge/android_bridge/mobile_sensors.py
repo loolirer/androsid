@@ -145,9 +145,7 @@ class MobileSensors(LifecycleNode):
                 self.get_logger().debug(f'Could not shutdown socket: {e}')
 
         if self._thread is not None:
-            self._thread.join(timeout=1.0)
-            if self._thread.is_alive():
-                self.get_logger().warn('Reader thread still running after 1s')
+            self._thread.join()
             self._thread = None
 
     def _destroy_resources(self):
