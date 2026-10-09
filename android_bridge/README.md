@@ -60,17 +60,6 @@ The core logic is partitioned across the following modules:
 
 ---
 
-## Coordinate Conventions
-
-Sensor coordinates from Android hardware are transformed into the ROS Forward-Left-Up (FLU) body frame:
-* $X_{\text{ros}} = -Z_{\text{android}}$
-* $Y_{\text{ros}} = Y_{\text{android}}$
-* $Z_{\text{ros}} = X_{\text{android}}$
-
-Measurements adhere to standard SI units: linear accelerations in $\text{m/s}^2$, angular velocities in $\text{rad/s}$, and magnetic fields in $\text{Tesla}$.
-
----
-
 ## Build and Execution
 
 ### Building
