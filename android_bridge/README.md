@@ -38,8 +38,6 @@ The core logic is partitioned across the following modules:
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `host` | `string` | `127.0.0.1` | IP address or hostname of the Android sensor streamer socket. |
-| `port` | `integer` | `9870` | TCP port exposed by the Android streamer. |
 | `imu_frame` | `string` | `imu_link` | Frame ID stamped in IMU and magnetic field headers. |
 | `gps_frame` | `string` | `gps_link` | Frame ID stamped in NavSatFix message headers. |
 | `camera_names` | `string_array` | `[front_0,rear_0]` | List of expected camera identifiers. |
