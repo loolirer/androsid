@@ -111,10 +111,8 @@ class MobileSensors(LifecycleNode):
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
-        try:
-            self.trigger_shutdown()
-        except Exception as e:
-            self.get_logger().warn(f"Graceful shutdown failed: {e}")
+        self._stop_streaming()
+        self._destroy_resources()
         return super().destroy_node()
 
     def _stop_streaming(self):
