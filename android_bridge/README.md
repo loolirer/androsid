@@ -24,7 +24,7 @@ The core logic is partitioned across the following modules:
   Declarative ROS 2 launch description. Configures node startup arguments and instantiates the `mobile_sensors` process within the execution graph.
 
 * **`config/`** *(Configuration and Layout Presets)*:
-  Contains node parameter definitions (YAML) and dashboard visualization configurations, including Foxglove Studio layouts (`androsid.json`).
+  Contains node parameter definitions and visualization configurations.
 
 ---
 
