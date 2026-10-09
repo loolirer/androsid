@@ -21,7 +21,7 @@ The core logic is partitioned across the following modules:
   Managed node implementation (`MobileSensors`) derived from `rclpy.lifecycle.Node`. Manages socket connectivity in a background worker thread, declares configurable ROS2 parameters, creates lifecycle publishers, and exposes service servers. It ensures determinism by controlling when telemetry publication is activated or suppressed based on lifecycle state transitions.
 
 * **`launch/mobile_sensors.launch.py`**:
-  Declarative ROS 2 launch description. Configures node startup arguments (such as target host IP, port, frame IDs, and active camera handles) and instantiates the `mobile_sensors` process within the execution graph.
+  Declarative ROS 2 launch description. Configures node startup arguments and instantiates the `mobile_sensors` process within the execution graph.
 
 * **`config/`** *(Configuration and Layout Presets)*:
   Contains node parameter definitions (YAML) and dashboard visualization configurations, including Foxglove Studio layouts (`androsid.json`).
