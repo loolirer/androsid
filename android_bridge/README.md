@@ -1,12 +1,12 @@
 # android_bridge
 
-ROS 2 lifecycle bridge node for streaming Android sensor telemetry and handling hardware commands.
+ROS 2 bridge package for streaming Android sensor telemetry and handling hardware commands.
 
 ---
 
 ## Overview
 
-`android_bridge` is an `ament_python` package that interfaces ROS 2 with Android devices running the sensor streamer. It dispatches telemetry via lifecycle-managed publishers.
+`android_bridge` is an `ament_python` package that interfaces ROS 2 with Android devices running the sensor streamer. It has two decoupled nodes: one for handling unidirectional sensor telemetry via lifecycle-managed publishers, and another managing event-driven hardware actuation.
 
 ---
 
@@ -17,11 +17,14 @@ The core logic is partitioned across the following modules:
 * **`android_bridge/android_to_ros.py`**:
   Pure conversion utilities and mathematical transformations. Converts raw newline-delimited JSON payloads into typed `sensor_msgs` (`Imu`, `MagneticField`, `NavSatFix`, `BatteryState`, `CompressedImage`). Applies coordinate frame rotations from native Android sensor axes to the ROS standard Forward-Left-Up (FLU) body frame, sets REP-145 covariance flags, and decodes Base64 JPEG buffers.
 
-* **`android_bridge/mobile_sensors.py`**:
-  Managed node implementation (`MobileSensors`) derived from `rclpy.lifecycle.Node`. Manages socket connectivity in a background worker thread, declares configurable ROS2 parameters, creates lifecycle publishers, and exposes service servers. It ensures determinism by controlling when telemetry publication is activated or suppressed based on lifecycle state transitions.
+* **`android_bridge/android_sensors.py`**:
+  Managed node implementation (`AndroidSensors`) derived from `rclpy.lifecycle.Node`. Manages socket connectivity in a background worker thread, declares configurable ROS2 parameters and creates lifecycle publishers.
 
-* **`launch/mobile_sensors.launch.py`**:
-  Declarative ROS 2 launch description. Configures node startup arguments and instantiates the `mobile_sensors` process within the execution graph.
+* **`android_bridge/android_actuators.py`**:
+  Standard node implementation (`AndroidActuators`) derived from `rclpy.node.Node`. Exposes service servers and handles UNIX domain socket communication to dispatch commands to the Android device.
+
+* **`launch/android_bridge.launch.py`**:
+  Declarative ROS 2 launch description. Configures node startup arguments, instantiates both nodes and supports modular bringup via boolean launch arguments (`launch_sensors` and `launch_actuators`).
 
 * **`config/`** *(Configuration and Layout Presets)*:
   Contains node parameter definitions and visualization configurations.
@@ -32,15 +35,22 @@ The core logic is partitioned across the following modules:
 
 ### Managed Nodes
 
-* **`mobile_sensors`**: Lifecycle node handling device streaming and topic dispatching.
+* **`android_sensors`**: Lifecycle node handling device streaming and topic dispatching.
+* **`android_actuators`**: Node handling hardware actuation endpoints and command dispatch.
 
-### Parameters
+### Parameters (`android_sensors`)
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `imu_frame` | `string` | `imu_link` | Frame ID stamped in IMU and magnetic field headers. |
 | `gps_frame` | `string` | `gps_link` | Frame ID stamped in NavSatFix message headers. |
 | `camera_names` | `string_array` | `[front_0,rear_0]` | List of expected camera identifiers. |
+
+### Parameters (`android_actuators`)
+
+| Parameter | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `socket_address` | `string` | `/run/androsid/android_actuators.sock` | Path to the Android command UNIX domain socket. |
 
 ### Published Topics
 
@@ -70,20 +80,28 @@ colcon build --symlink-install --packages-select android_bridge
 
 ### Running
 
+Bring up both sensor streaming and actuators by default:
+
 ```bash
-ros2 launch android_bridge mobile_sensors.launch.py
+ros2 launch android_bridge android_bridge.launch.py
+```
+
+Or launch them individually using conditional arguments:
+
+```bash
+ros2 launch android_bridge android_bridge.launch.py launch_actuators:=false launch_sensors:=true
 ```
 
 ### Lifecycle Control
 
-Manage the node state through the ROS 2 lifecycle CLI:
+Manage the `android_sensors` node state through the ROS 2 lifecycle CLI:
 
 ```bash
-ros2 lifecycle set /mobile_sensors configure
+ros2 lifecycle set /android_sensors configure
 
-ros2 lifecycle set /mobile_sensors deactivate
+ros2 lifecycle set /android_sensors deactivate
 
-ros2 lifecycle set /mobile_sensors activate
+ros2 lifecycle set /android_sensors activate
 
 ```
 

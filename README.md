@@ -42,12 +42,12 @@ ssh -p 8022 root@<phone-ip>
 And launch the bridge:
 
 ```bash
-ros2 launch android_bridge mobile_sensors.launch.py
+ros2 launch android_bridge android_sensors.launch.py
 ```
 
 ## Usage
 
-If everything is working correctly, the bridge node should be publishing on the topics below:
+If everything is working correctly, the bridge nodes should be publishing on the topics below:
 
 - `/imu/data_raw`
 - `/imu/mag`
@@ -55,7 +55,7 @@ If everything is working correctly, the bridge node should be publishing on the 
 - `/camera/<name>/image_raw/compressed` for each name in the `camera_names` parameter
 - `/battery_state`
 
-And serves the following service:
+And serving the following service:
 
 - `/set_torch`
 
@@ -63,7 +63,7 @@ And serves the following service:
 
 To adjust usage to your preference, modify:
 
-- **`android_bridge/config/mobile_sensors.yaml`** sets each topic's QoS profile.
+- **`android_bridge/config/android_sensors.yaml`** sets each topic's QoS profile.
 - **`docker/entrypoint.sh`** runs on boot; by default it starts the bridge and `sshd`. Edit it to
   change what auto-starts.
 - **`docker/ros2.sh`** (`/etc/profile.d/ros2.sh` in the rootfs) sources the ROS 2 workspace overlay
