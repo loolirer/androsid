@@ -56,7 +56,8 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             System.currentTimeMillis() * 1_000_000L - SystemClock.elapsedRealtimeNanos()
     }
 
-    private lateinit var server: StreamServer
+    private lateinit var actuatorServer: StreamServer
+    private lateinit var sensorServer: StreamServer
     private lateinit var sensorManager: SensorManager
     private var cameraProvider: ProcessCameraProvider? = null
     private var cameras: MutableList<CameraSource> = mutableListOf()
@@ -71,10 +72,13 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(File(filesDir, "run/mobile_sensors.sock")) {
+        sensorServer = StreamServer(File(filesDir, "run/android_sensors.sock"))
+        sensorServer.start()
+
+        actuatorServer = StreamServer(File(filesDir, "run/android_actuators.sock")) {
             rawCommand -> handleCommand(rawCommand)
         }
-        server.start()
+        actuatorServer.start()
 
         startForeground(NOTIF_ID, buildNotification())
 
@@ -118,7 +122,8 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
         sensorThread = null
         wakeLock?.takeIf { it.isHeld }?.release()
         multicastLock?.takeIf { it.isHeld }?.release()
-        server.stop()
+        sensorServer.stop()
+        actuatorServer.stop()
         super.onDestroy()
     }
 
@@ -205,7 +210,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             }
         }
 
-        cameras = combo.mapIndexed { index, _ -> CameraSource(server, names[index]) }.toMutableList()
+        cameras = combo.mapIndexed { index, _ -> CameraSource(sensorServer, names[index]) }.toMutableList()
 
         val singleConfigs = combo.mapIndexed { index, info ->
             ConcurrentCamera.SingleCameraConfig(
@@ -239,7 +244,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             }
         }
 
-        val source = CameraSource(server, name)
+        val source = CameraSource(sensorServer, name)
         cameras = mutableListOf(source)
 
         val camera = provider.bindToLifecycle(this, selector, source.imageAnalysis)
@@ -306,7 +311,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
 
                 val t = SystemClock.elapsedRealtimeNanos() + bootToEpochNanos
 
-                server.send(
+                sensorServer.send(
                     """{"type":"battery","stamp":$t,"voltage":$voltage,"temperature":$temperature,"current":$current,"percentage":$percentage,"status":"$status","health":"$health","present":$present,"technology":"$technology"}"""
                 )
             }
@@ -325,13 +330,13 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             Sensor.TYPE_GYROSCOPE -> {
                 val accel = lastAccel ?: return
                 val t = event.timestamp + bootToEpochNanos
-                server.send(
+                sensorServer.send(
                     """{"type":"imu","stamp":$t,"accel":[${accel[0]},${accel[1]},${accel[2]}],"gyro":[${event.values[0]},${event.values[1]},${event.values[2]}]}"""
                 )
             }
             Sensor.TYPE_MAGNETIC_FIELD -> {
                 val t = event.timestamp + bootToEpochNanos
-                server.send(
+                sensorServer.send(
                     """{"type":"mag","stamp":$t,"mag":[${event.values[0] * MAG_SCALE},${event.values[1] * MAG_SCALE},${event.values[2] * MAG_SCALE}]}"""
                 )
             }
@@ -351,7 +356,7 @@ class SensorService : LifecycleService(), SensorEventListener, LocationListener 
             Log.i(TAG, "first fix from '${loc.provider}', accuracy ${loc.accuracy} m")
         }
 
-        server.send(
+        sensorServer.send(
             """{"type":"gps","stamp":$t,"latitude":${loc.latitude},"longitude":${loc.longitude},""" +
             """"altitude":${loc.altitude},"accuracy":${loc.accuracy},"vertical_accuracy":$vertAcc,""" +
             """"speed":${loc.speed},"bearing":${loc.bearing},""" +

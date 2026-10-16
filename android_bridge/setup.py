@@ -22,7 +22,8 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'mobile_sensors = android_bridge.mobile_sensors:main',
+            'android_sensors = android_bridge.android_sensors:main',
+            'android_actuators = android_bridge.android_actuators:main',
         ],
     },
     tests_require=['pytest'],

@@ -23,9 +23,6 @@ from android_bridge.android_to_ros import (
     imu_msg,
     mag_msg,
 )
-from android_interfaces.srv import (
-    SetTorch,
-)
 import rclpy
 from rclpy.lifecycle import Node as LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
@@ -41,24 +38,22 @@ from sensor_msgs.msg import (
 )
 
 
-class MobileSensors(LifecycleNode):
+class AndroidSensors(LifecycleNode):
 
     def __init__(self):
-        super().__init__('mobile_sensors')
+        super().__init__('android_sensors')
 
         self.declare_parameter('imu_frame', 'imu_link')
         self.declare_parameter('gps_frame', 'gps_link')
         self.declare_parameter('camera_names', Parameter.Type.STRING_ARRAY)
 
         self.pubs = {}
-        self.srvs = {}
 
         self._stop = threading.Event()
-        self._send_lock = threading.Lock()
         self._thread = None
 
         self._sock = None
-        self._sock_address = '/run/androsid/mobile_sensors.sock'
+        self._sock_address = '/run/androsid/android_sensors.sock'
 
         self._unrecognized_cameras = set()
 
@@ -94,10 +89,6 @@ class MobileSensors(LifecycleNode):
                 10,
                 qos_overriding_options=self.qos_overrides,
             )
-
-        self.srvs['torch'] = self.create_service(
-            SetTorch, 'set_torch', self._on_set_torch
-        )
 
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -135,9 +126,8 @@ class MobileSensors(LifecycleNode):
 
     def _stop_streaming(self):
         self._stop.set()
+        sock, self._sock = self._sock, None
 
-        with self._send_lock:
-            sock, self._sock = self._sock, None
         if sock is not None:
             try:
                 sock.shutdown(socket.SHUT_RDWR)
@@ -153,22 +143,16 @@ class MobileSensors(LifecycleNode):
             self.destroy_lifecycle_publisher(pub)
         self.pubs.clear()
 
-        for srv in self.srvs.values():
-            self.destroy_service(srv)
-        self.srvs.clear()
-
     def _run(self):
         while not self._stop.is_set() and rclpy.ok():
             sock = None
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
-                with self._send_lock:
-                    if self._stop.is_set():
-                        break
-                    self._sock = sock
+                if self._stop.is_set():
+                    break
+                self._sock = sock
                 self.get_logger().info('Bridge connected!')
-
                 self._consume(sock)
 
             except OSError as e:
@@ -180,8 +164,7 @@ class MobileSensors(LifecycleNode):
                 self._stop.wait(1.0)
 
             finally:
-                with self._send_lock:
-                    self._sock = None
+                self._sock = None
                 if sock is not None:
                     sock.close()
 
@@ -246,40 +229,10 @@ class MobileSensors(LifecycleNode):
         if self.pubs['battery'].is_activated:
             self.pubs['battery'].publish(battery_msg(sample))
 
-    def _send_command(self, cmd, params):
-        if params is None:
-            params = {}
-
-        if self._state_machine.current_state[1] != 'active':
-            self.get_logger().warn(f'Cannot send command "{cmd}": node is not active')
-            return False
-
-        payload = {'cmd': cmd}
-        payload.update(params)
-        cmd_bytes = (json.dumps(payload) + '\n').encode('utf-8')
-
-        try:
-            with self._send_lock:
-                sock = self._sock
-                if sock is None:
-                    self.get_logger().warn(
-                        f'Cannot send command {cmd!r}: socket is not connected'
-                    )
-                    return False
-                sock.sendall(cmd_bytes)
-            return True
-        except OSError as e:
-            self.get_logger().error(f'Failed to send command "{cmd}": {e}')
-            return False
-
-    def _on_set_torch(self, request, response):
-        response.success = self._send_command('torch', {'enabled': request.data})
-        return response
-
 
 def main(args=None):
     rclpy.init(args=args)
-    node = MobileSensors()
+    node = AndroidSensors()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
