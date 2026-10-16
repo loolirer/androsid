@@ -50,7 +50,7 @@ The core logic is partitioned across the following modules:
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `socket_address` | `string` | `/run/androsid/mobile_actuators.sock` | Path to the Android command UNIX domain socket. |
+| `socket_address` | `string` | `/run/androsid/android_actuators.sock` | Path to the Android command UNIX domain socket. |
 
 ### Published Topics
 
@@ -97,11 +97,11 @@ ros2 launch android_bridge android_bridge.launch.py launch_actuators:=false laun
 Manage the `android_sensors` node state through the ROS 2 lifecycle CLI:
 
 ```bash
-ros2 lifecycle set /mobile_sensors configure
+ros2 lifecycle set /android_sensors configure
 
-ros2 lifecycle set /mobile_sensors deactivate
+ros2 lifecycle set /android_sensors deactivate
 
-ros2 lifecycle set /mobile_sensors activate
+ros2 lifecycle set /android_sensors activate
 
 ```
 
