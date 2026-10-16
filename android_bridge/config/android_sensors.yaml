@@ -1,4 +1,4 @@
-/mobile_sensors:
+/android_sensors:
   ros__parameters:
     imu_frame: imu_link
     gps_frame: gps_link
