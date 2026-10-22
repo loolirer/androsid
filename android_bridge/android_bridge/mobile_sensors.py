@@ -14,7 +14,6 @@
 
 import json
 import socket
-import sys
 import threading
 
 from android_bridge.android_to_ros import (
@@ -62,8 +61,6 @@ class MobileSensors(LifecycleNode):
         self._sock_address = '/run/androsid/mobile_sensors.sock'
 
         self._unrecognized_cameras = set()
-
-        self.failed = False
 
     def on_configure(self, state):
         self.imu_frame = self.get_parameter('imu_frame').value
@@ -221,12 +218,10 @@ class MobileSensors(LifecycleNode):
                     self._on_battery(sample)
             except (KeyError, TypeError, ValueError) as e:
                 self.get_logger().fatal(
-                    f"Can't convert '{sample_type}' sample ({e!r}), app and bridge "
-                    f"are probably on different versions: {line[:200]}"
+                    f'Message format mismatch in "{sample_type}" sample: {e!r}'
                 )
-                self.failed = True
                 self._stop.set()
-                self.context.try_shutdown()
+                self.executor.create_task(self.trigger_shutdown)
                 return
 
     def _on_imu(self, sample):
@@ -301,9 +296,6 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-
-    if node.failed:
-        sys.exit(1)
 
 
 if __name__ == '__main__':
