@@ -25,4 +25,5 @@ setup(
             'mobile_sensors = android_bridge.mobile_sensors:main',
         ],
     },
+    tests_require=['pytest'],
 )
