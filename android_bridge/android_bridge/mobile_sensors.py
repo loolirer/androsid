@@ -205,16 +205,24 @@ class MobileSensors(LifecycleNode):
                 )
                 continue
 
-            if sample_type == 'imu':
-                self._on_imu(sample)
-            elif sample_type == 'mag':
-                self._on_mag(sample)
-            elif sample_type == 'gps':
-                self._on_gps(sample)
-            elif sample_type == 'frame':
-                self._on_frame(sample)
-            elif sample_type == 'battery':
-                self._on_battery(sample)
+            try:
+                if sample_type == 'imu':
+                    self._on_imu(sample)
+                elif sample_type == 'mag':
+                    self._on_mag(sample)
+                elif sample_type == 'gps':
+                    self._on_gps(sample)
+                elif sample_type == 'frame':
+                    self._on_frame(sample)
+                elif sample_type == 'battery':
+                    self._on_battery(sample)
+            except (KeyError, TypeError, ValueError) as e:
+                self.get_logger().fatal(
+                    f'Message format mismatch in "{sample_type}" sample: {e!r}'
+                )
+                self._stop.set()
+                self.executor.create_task(self.trigger_shutdown)
+                return
 
     def _on_imu(self, sample):
         if self.pubs['imu'].is_activated:
