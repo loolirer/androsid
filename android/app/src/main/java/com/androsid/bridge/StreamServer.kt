@@ -1,4 +1,4 @@
-package com.androsid
+package com.androsid.bridge
 
 import android.net.LocalServerSocket
 import android.net.LocalSocket
@@ -107,9 +107,6 @@ class StreamServer(
     }
 
     fun isConnected(): Boolean = client != null
-
-    fun send(json: String) =
-        sendLine((json + "\n").toByteArray(Charsets.UTF_8))
 
     fun sendLine(line: ByteArray) {
         val c = client ?: return

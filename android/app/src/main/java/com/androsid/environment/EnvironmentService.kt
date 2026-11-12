@@ -1,43 +1,57 @@
-package com.androsid
+package com.androsid.environment
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.wifi.WifiManager
 import android.system.Os
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.lifecycle.LifecycleService
+import com.androsid.ForegroundService
 import java.io.File
 import java.nio.file.Paths
 import java.util.concurrent.atomic.AtomicBoolean
 
-class EnvironmentService : LifecycleService() {
+class EnvironmentService : ForegroundService(
+    channelId = "androsid_linux",
+    channelName = "androsid Linux environment",
+    notificationId = 2,
+    initialText = "Starting...",
+) {
 
     companion object {
         private const val TAG = "EnvironmentService"
-        private const val CHANNEL_ID = "androsid_linux"
-        private const val NOTIF_ID = 2
         private val LISTENING_PORT = Regex("""listening on .+ port (\d+)""")
 
         const val ACTION_REPLACE_ROOTFS = "com.androsid.action.REPLACE_ROOTFS"
         const val ACTION_ADD_AUTHORIZED_KEY = "com.androsid.action.ADD_AUTHORIZED_KEY"
+
+        const val INCOMING_DIR = "incoming"
+        const val INCOMING_ROOTFS = "rootfs.tar"
+        const val INCOMING_AUTHORIZED_KEY = "authorized_key.pub"
+
+        private const val VERIFIED_ROOTFS = "rootfs.verified.tar"
+        private const val ROOTFS_DIR = "rootfs"
     }
 
     @Volatile
     private var supervisorThread: Thread? = null
 
     private val attempting = AtomicBoolean(false)
-    private val notificationManager by lazy { getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager }
+    private var multicastLock: WifiManager.MulticastLock? = null
+
+    private val rootfsDir: File get() = File(filesDir, ROOTFS_DIR)
+    private val incomingDir: File get() = File(filesDir, INCOMING_DIR)
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "androsid Linux environment", NotificationManager.IMPORTANCE_LOW)
-        )
-        startForeground(NOTIF_ID, buildNotification("Starting..."))
+
+        // The Wi-Fi firmware drops multicast for groups nothing has joined
+        multicastLock = (applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager)
+            .createMulticastLock("androsid::dds")
+            .apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        Log.i(TAG, "multicast lock acquired, DDS discovery should reach this device")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -54,6 +68,7 @@ class EnvironmentService : LifecycleService() {
         Log.i(TAG, "onDestroy: firing")
         supervisorThread?.interrupt()
         Thread(::killDescendantProcesses, "linux-env-teardown-sweep").start()
+        multicastLock?.takeIf { it.isHeld }?.release()
         super.onDestroy()
     }
 
@@ -74,14 +89,8 @@ class EnvironmentService : LifecycleService() {
     private fun replaceAndRestart() {
         Log.i(TAG, "replacing the environment with the freshly shared rootfs")
 
-        val incoming = File(filesDir, "incoming/rootfs.tar")
-        if (!incoming.exists()) {
-            Log.w(TAG, "no incoming tarball to replace with")
-            return
-        }
-        if (!isTarSafe(incoming)) {
-            Log.e(TAG, "rejected tarball with entries escaping the target directory, keeping current environment")
-            incoming.delete()
+        if (verifiedTarball() == null) {
+            Log.w(TAG, "no usable tarball to replace with, keeping current environment")
             return
         }
 
@@ -93,14 +102,38 @@ class EnvironmentService : LifecycleService() {
         tryStartEnvironment()
     }
 
+    // Each shared tarball is checked once, then renamed so later steps never re-check it
+    private fun verifiedTarball(): File? {
+        val incoming = File(incomingDir, INCOMING_ROOTFS)
+        val verified = File(incomingDir, VERIFIED_ROOTFS)
+
+        if (incoming.exists()) {
+            if (!isTarSafe(incoming)) {
+                Log.e(TAG, "rejected tarball with entries escaping the target directory")
+                incoming.delete()
+                return null
+            }
+            if (!incoming.renameTo(verified)) {
+                Log.e(TAG, "could not move ${incoming.absolutePath} to ${verified.absolutePath}")
+                return null
+            }
+        }
+
+        if (!verified.exists()) {
+            Log.w(TAG, "no tarball at ${incoming.absolutePath}")
+            return null
+        }
+        return verified
+    }
+
     private fun deleteRootfs(): Boolean {
-        val rootfs = File(filesDir, "rootfs")
+        val rootfs = rootfsDir
         if (!rootfs.exists()) return true
         return rootfs.deleteRecursively() && !rootfs.exists()
     }
 
     private fun addAuthorizedKey() {
-        val incoming = File(filesDir, "incoming/authorized_key.pub")
+        val incoming = File(incomingDir, INCOMING_AUTHORIZED_KEY)
         if (!incoming.exists()) {
             Log.w(TAG, "no incoming public key to authorize")
             return
@@ -108,7 +141,7 @@ class EnvironmentService : LifecycleService() {
         val pubkey = incoming.readText().trim()
         incoming.delete()
 
-        val rootfs = File(filesDir, "rootfs")
+        val rootfs = rootfsDir
         if (!File(rootfs, "root").isDirectory) {
             Log.w(TAG, "no rootfs extracted yet, ignoring shared key")
             return
@@ -173,27 +206,17 @@ class EnvironmentService : LifecycleService() {
     }
 
     private fun tryExtractRootfs(): File? {
-        val rootfs = File(filesDir, "rootfs")
+        val rootfs = rootfsDir
 
         if (rootfs.list()?.isNotEmpty() == true) return rootfs
 
-        val incoming = File(filesDir, "incoming/rootfs.tar")
-        if (!incoming.exists()) {
-            Log.w(TAG, "no rootfs at ${rootfs.absolutePath} and no tarball at ${incoming.absolutePath}")
-            return null
-        }
+        val tarball = verifiedTarball() ?: return null
 
-        if (!isTarSafe(incoming)) {
-            Log.e(TAG, "rejected tarball with entries escaping the target directory")
-            incoming.delete()
-            return null
-        }
-
-        Log.i(TAG, "extracting ${incoming.absolutePath} -> ${rootfs.absolutePath}")
+        Log.i(TAG, "extracting ${tarball.absolutePath} -> ${rootfs.absolutePath}")
         rootfs.deleteRecursively()
         rootfs.mkdirs()
 
-        val pb = ProcessBuilder("/system/bin/tar", "xzf", incoming.absolutePath, "-C", rootfs.absolutePath)
+        val pb = ProcessBuilder("/system/bin/tar", "xzf", tarball.absolutePath, "-C", rootfs.absolutePath)
         pb.redirectErrorStream(true)
         val process = pb.start()
         val output = process.inputStream.bufferedReader().readText()
@@ -202,12 +225,12 @@ class EnvironmentService : LifecycleService() {
         if (exitCode != 0) {
             Log.e(TAG, "extraction failed (tar exit $exitCode):\n$output")
             rootfs.deleteRecursively()
-            incoming.delete()
+            tarball.delete()
             return null
         }
 
         Log.i(TAG, "rootfs extracted successfully")
-        incoming.delete()
+        tarball.delete()
         return rootfs
     }
 
@@ -276,30 +299,12 @@ class EnvironmentService : LifecycleService() {
             process.inputStream.bufferedReader().forEachLine { line ->
                 Log.i(TAG, "entrypoint: $line")
                 LISTENING_PORT.find(line)?.groupValues?.get(1)?.let { port ->
-                    notify(buildNotification("SSH available on port $port"))
+                    updateNotification("SSH available on port $port")
                 }
             }
             Log.w(TAG, "entrypoint exited with code ${process.waitFor()}")
         } catch (e: Exception) {
             Log.e(TAG, "failed to launch the Linux environment", e)
         }
-    }
-
-    private fun notify(notification: Notification) {
-        notificationManager.notify(NOTIF_ID, notification)
-    }
-
-    private fun buildNotification(statusText: String): Notification {
-        val tap = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("androsid")
-            .setContentText(statusText)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
-            .setOngoing(true)
-            .setContentIntent(tap)
-            .build()
     }
 }

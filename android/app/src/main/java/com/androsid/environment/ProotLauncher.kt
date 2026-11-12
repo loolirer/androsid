@@ -1,10 +1,12 @@
-package com.androsid
+package com.androsid.environment
 
 import android.content.Context
 import android.system.Os
 import java.io.File
 
 object ProotLauncher {
+
+    const val SOCKET_DIR = "run"
 
     fun launch(
         context: Context,
@@ -13,7 +15,7 @@ object ProotLauncher {
         workingDir: String = "/root",
     ): Process {
         val nativeDir = File(context.applicationInfo.nativeLibraryDir)
-        val socketDir = File(context.filesDir, "run").apply { mkdirs() }
+        val socketDir = File(context.filesDir, SOCKET_DIR).apply { mkdirs() }
         Os.chmod(socketDir.absolutePath, "700".toInt(8))
         val libDir = File(context.filesDir, "proot-lib").apply { mkdirs() }
         val tmpDir = File(context.filesDir, "proot-tmp").apply { mkdirs() }
