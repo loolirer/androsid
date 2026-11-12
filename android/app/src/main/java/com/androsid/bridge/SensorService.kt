@@ -57,7 +57,7 @@ class SensorService : ForegroundService(
             camera,
             Battery(this, server, handler),
         )
-        actuators = listOf(Torch(camera)).associateBy { it.command }
+        actuators = listOf(Torch(camera::boundCameras)).associateBy { it.command }
 
         sensors.forEach { it.start() }
     }

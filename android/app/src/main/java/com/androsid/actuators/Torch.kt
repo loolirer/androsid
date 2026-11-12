@@ -1,10 +1,10 @@
 package com.androsid.actuators
 
 import android.util.Log
-import com.androsid.sensors.Camera
+import androidx.camera.core.Camera
 import org.json.JSONObject
 
-class Torch(private val camera: Camera) : Actuator {
+class Torch(private val cameras: () -> List<Camera>) : Actuator {
 
     companion object {
         private const val TAG = "Torch"
@@ -14,7 +14,7 @@ class Torch(private val camera: Camera) : Actuator {
 
     override fun handle(args: JSONObject) {
         val enabled = args.optBoolean("enabled", false)
-        val target = camera.boundCameras.firstOrNull { it.cameraInfo.hasFlashUnit() }
+        val target = cameras().firstOrNull { it.cameraInfo.hasFlashUnit() }
         if (target != null) {
             target.cameraControl.enableTorch(enabled)
             Log.i(TAG, "Torch state set to: $enabled")
