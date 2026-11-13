@@ -29,7 +29,8 @@ class SensorService : ForegroundService(
         private const val TAG = "SensorService"
     }
 
-    private lateinit var server: StreamServer
+    private lateinit var sensorServer: StreamServer
+    private lateinit var actuatorServer: StreamServer
     private var sensors: List<Sensor<*>> = emptyList()
     @Volatile private var actuators: Map<String, Actuator> = emptyMap()
     private var wakeLock: PowerManager.WakeLock? = null
@@ -38,10 +39,13 @@ class SensorService : ForegroundService(
     override fun onCreate() {
         super.onCreate()
 
-        server = StreamServer(File(filesDir, "${ProotLauncher.SOCKET_DIR}/mobile_sensors.sock")) {
+        sensorServer = StreamServer(File(filesDir, "${ProotLauncher.SOCKET_DIR}/android_sensors.sock"))
+        sensorServer.start()
+
+        actuatorServer = StreamServer(File(filesDir, "${ProotLauncher.SOCKET_DIR}/android_actuators.sock")) {
             rawCommand -> handleCommand(rawCommand)
         }
-        server.start()
+        actuatorServer.start()
 
         wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "androsid::stream")
@@ -51,13 +55,13 @@ class SensorService : ForegroundService(
         sensorThread = thread
         val handler = Handler(thread.looper)
 
-        val camera = Camera(this, server, this)
+        val camera = Camera(this, sensorServer, this)
         sensors = listOf(
-            IMU(this, server, handler),
-            Magnetometer(this, server, handler),
-            GPS(this, server, handler),
+            IMU(this, sensorServer, handler),
+            Magnetometer(this, sensorServer, handler),
+            GPS(this, sensorServer, handler),
             camera,
-            Battery(this, server, handler),
+            Battery(this, sensorServer, handler),
         )
         actuators = listOf(Torch(camera::boundCameras)).associateBy { it.command }
 
@@ -69,7 +73,8 @@ class SensorService : ForegroundService(
         sensorThread?.quitSafely()
         sensorThread = null
         wakeLock?.takeIf { it.isHeld }?.release()
-        server.stop()
+        sensorServer.stop()
+        actuatorServer.stop()
         super.onDestroy()
     }
 
