@@ -13,6 +13,7 @@ import com.androsid.sensors.Battery
 import com.androsid.sensors.Camera
 import com.androsid.sensors.GPS
 import com.androsid.sensors.IMU
+import com.androsid.sensors.Magnetometer
 import com.androsid.sensors.Sensor
 import org.json.JSONObject
 import java.io.File
@@ -53,6 +54,7 @@ class SensorService : ForegroundService(
         val camera = Camera(this, server, this)
         sensors = listOf(
             IMU(this, server, handler),
+            Magnetometer(this, server, handler),
             GPS(this, server, handler),
             camera,
             Battery(this, server, handler),

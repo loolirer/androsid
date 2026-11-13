@@ -17,12 +17,10 @@ class IMU(
 
     companion object {
         private const val SENSOR_PERIOD_US = 5000
-        private const val MAG_SCALE = 1e-6f // From uT to T
 
         private val TYPES = listOf(
             HardwareSensor.TYPE_ACCELEROMETER,
             HardwareSensor.TYPE_GYROSCOPE,
-            HardwareSensor.TYPE_MAGNETIC_FIELD
         )
     }
 
@@ -55,17 +53,10 @@ class IMU(
         sensorManager.unregisterListener(listener)
     }
 
-    override fun read(event: SensorEvent): ByteArray? = when (event.sensor.type) {
-        HardwareSensor.TYPE_GYROSCOPE -> lastAccel?.let { accel ->
-            message(
-                "imu", event.timestamp,
-                """"accel":[${accel[0]},${accel[1]},${accel[2]}],"gyro":[${event.values[0]},${event.values[1]},${event.values[2]}]"""
-            )
-        }
-        HardwareSensor.TYPE_MAGNETIC_FIELD -> message(
-            "mag", event.timestamp,
-            """"mag":[${event.values[0] * MAG_SCALE},${event.values[1] * MAG_SCALE},${event.values[2] * MAG_SCALE}]"""
+    override fun read(event: SensorEvent): ByteArray? = lastAccel?.let { accel ->
+        message(
+            "imu", event.timestamp,
+            """"accel":[${accel[0]},${accel[1]},${accel[2]}],"gyro":[${event.values[0]},${event.values[1]},${event.values[2]}]"""
         )
-        else -> null
     }
 }
