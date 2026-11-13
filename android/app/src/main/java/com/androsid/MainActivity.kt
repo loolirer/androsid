@@ -15,6 +15,8 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.androsid.bridge.SensorService
+import com.androsid.environment.EnvironmentService
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.InputStream
@@ -104,12 +106,12 @@ class MainActivity : ComponentActivity() {
                 input.use {
                     when {
                         isGzip(it) -> {
-                            val tarball = saveIncoming(it, "rootfs.tar")
+                            val tarball = saveIncoming(it, EnvironmentService.INCOMING_ROOTFS)
                             Log.i(TAG, "received rootfs tarball at ${tarball.absolutePath}")
                             startEnvironmentAction(EnvironmentService.ACTION_REPLACE_ROOTFS)
                         }
                         isPublicKey(it) -> {
-                            val pubkey = saveIncoming(it, "authorized_key.pub")
+                            val pubkey = saveIncoming(it, EnvironmentService.INCOMING_AUTHORIZED_KEY)
                             Log.i(TAG, "received SSH public key at ${pubkey.absolutePath}")
                             startEnvironmentAction(EnvironmentService.ACTION_ADD_AUTHORIZED_KEY)
                         }
@@ -144,7 +146,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun saveIncoming(input: InputStream, name: String): File {
-        val incomingDir = File(filesDir, "incoming").apply { mkdirs() }
+        val incomingDir = File(filesDir, EnvironmentService.INCOMING_DIR).apply { mkdirs() }
         val target = File(incomingDir, name)
 
         val partial = File(incomingDir, "$name.partial")

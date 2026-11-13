@@ -46,13 +46,13 @@
         </activity>
 
         <service
-            android:name=".SensorService"
+            android:name=".bridge.SensorService"
             android:exported="false"
             android:stopWithTask="true"
             android:foregroundServiceType="camera|location|dataSync" />
 
         <service
-            android:name=".EnvironmentService"
+            android:name=".environment.EnvironmentService"
             android:exported="false"
             android:stopWithTask="true"
             android:foregroundServiceType="dataSync" />
