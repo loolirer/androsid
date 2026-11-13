@@ -23,6 +23,9 @@ abstract class Sensor<T>(
 
     private var started = false
 
+    protected val isStarted: Boolean
+        get() = started
+
     fun start() {
         val p = permission
         if (p != null &&

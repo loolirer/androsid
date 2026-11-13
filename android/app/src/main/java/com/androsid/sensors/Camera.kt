@@ -42,11 +42,13 @@ class Camera(
     override val permission = Manifest.permission.CAMERA
 
     private var cameraProvider: ProcessCameraProvider? = null
-    private var streams: MutableList<Stream> = mutableListOf()
+    @Volatile private var streams: List<Stream> = emptyList()
 
     override fun onStart() {
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
+            if (!isStarted) return@addListener
+
             try {
                 val provider = future.get().also { cameraProvider = it }
 
@@ -69,7 +71,7 @@ class Camera(
 
     override fun onStop() {
         streams.forEach { it.stop() }
-        streams.clear()
+        streams = emptyList()
         cameraProvider?.unbindAll()
     }
 
@@ -111,19 +113,20 @@ class Camera(
             }
         }
 
-        streams = names.map { Stream(it) }.toMutableList()
+        val newStreams = names.map { Stream(it) }
+        streams = newStreams
 
         val singleConfigs = combo.mapIndexed { index, info ->
             ConcurrentCamera.SingleCameraConfig(
                 info.cameraSelector,
-                UseCaseGroup.Builder().addUseCase(streams[index].imageAnalysis).build(),
+                UseCaseGroup.Builder().addUseCase(newStreams[index].imageAnalysis).build(),
                 lifecycleOwner
             )
         }
 
         val concurrentCamera = provider.bindToLifecycle(singleConfigs)
         concurrentCamera.cameras.forEachIndexed { index, cam ->
-            streams.getOrNull(index)?.camera = cam
+            newStreams.getOrNull(index)?.camera = cam
         }
         Log.i(tag, "cameras bound: $names")
     }
@@ -146,7 +149,7 @@ class Camera(
         }
 
         val stream = Stream(name)
-        streams = mutableListOf(stream)
+        streams = listOf(stream)
 
         stream.camera = provider.bindToLifecycle(lifecycleOwner, selector, stream.imageAnalysis)
         Log.i(tag, "camera bound: $name")
