@@ -190,8 +190,6 @@ class Camera(
                         "rotationDegrees=${image.imageInfo.rotationDegrees}")
                 }
 
-                if (!server.isConnected()) return
-
                 emit(CameraFrame(name, image))
             } catch (e: Exception) {
                 Log.e(tag, "frame encode failed for camera '$name'", e)

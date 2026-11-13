@@ -9,7 +9,7 @@ import com.androsid.bridge.StreamServer
 
 abstract class Sensor<T>(
     protected val context: Context,
-    protected val server: StreamServer,
+    private val server: StreamServer,
 ) {
 
     companion object {
@@ -52,6 +52,7 @@ abstract class Sensor<T>(
     protected abstract fun read(event: T): ByteArray?
 
     protected fun emit(event: T) {
+        if (!server.isConnected()) return
         read(event)?.let(server::sendLine)
     }
 

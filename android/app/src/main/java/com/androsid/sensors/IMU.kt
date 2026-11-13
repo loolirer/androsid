@@ -30,7 +30,13 @@ class IMU(
     private var lastAccel: FloatArray? = null
 
     private val listener = object : SensorEventListener {
-        override fun onSensorChanged(event: SensorEvent) = emit(event)
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == HardwareSensor.TYPE_ACCELEROMETER) {
+                lastAccel = event.values.clone()
+            } else {
+                emit(event)
+            }
+        }
         override fun onAccuracyChanged(sensor: HardwareSensor?, accuracy: Int) {}
     }
 
@@ -50,10 +56,6 @@ class IMU(
     }
 
     override fun read(event: SensorEvent): ByteArray? = when (event.sensor.type) {
-        HardwareSensor.TYPE_ACCELEROMETER -> {
-            lastAccel = event.values.clone()
-            null
-        }
         HardwareSensor.TYPE_GYROSCOPE -> lastAccel?.let { accel ->
             message(
                 "imu", event.timestamp,
