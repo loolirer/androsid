@@ -1,0 +1,113 @@
+name: PRoot binaries
+
+on:
+  pull_request:
+    paths:
+      - native/proot/**
+      - .github/workflows/proot-binaries.yml
+  push:
+    tags:
+      - proot-binaries-*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/proot-binaries-') && github.ref_name || '' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # PRoot's makefile needs GNU awk (strtonum); Ubuntu's default awk is mawk.
+      - name: Install GNU awk
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gawk
+
+      - name: Select the NDK
+        run: |
+          ndk=$(printf '%s\n' "$ANDROID_HOME"/ndk/29.* | sort -V | tail -n 1)
+          if [ ! -d "$ndk" ]; then
+            echo "::error::No NDK r29 on this runner image"
+            exit 1
+          fi
+          echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
+
+      - name: Lint the build script
+        run: shellcheck native/proot/build.sh
+
+      - name: Build
+        run: bash native/proot/build.sh
+
+      - name: Show the pins for this build
+        run: |
+          {
+            echo '```properties'
+            cat native/proot/out/proot-binaries.properties
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: proot-binaries
+          path: native/proot/out/
+          if-no-files-found: error
+
+      - name: Keep the build logs when something breaks
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: proot-build-logs
+          path: native/proot/work/logs/
+          if-no-files-found: ignore
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/proot-binaries-')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: proot-binaries
+          path: out
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "PRoot, talloc and libandroid-shmem for androsid (arm64), built from source by the"
+            echo "\`PRoot binaries\` workflow. The corresponding source of each one is attached."
+            echo
+            echo "To use this release, put this in \`android/app/proot-binaries.properties\`"
+            echo "(the same file is attached as \`proot-binaries.properties\`):"
+            echo
+            echo '```properties'
+            cat out/proot-binaries.properties
+            echo '```'
+            echo
+            echo '```text'
+            cat out/BUILD-INFO.txt
+            echo '```'
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --latest=false \
+            --title "PRoot binaries ${GITHUB_REF_NAME#proot-binaries-}" \
+            --notes-file notes.md \
+            out/libproot.so out/libproot_loader.so out/libtalloc.so out/libandroid-shmem.so \
+            out/SHA256SUMS out/BUILD-INFO.txt out/proot-binaries.properties \
+            out/sources/*
