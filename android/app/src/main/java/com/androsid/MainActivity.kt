@@ -15,7 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.androsid.bridge.SensorService
+import com.androsid.bridge.BridgeService
 import com.androsid.environment.EnvironmentService
 import java.io.BufferedInputStream
 import java.io.File
@@ -73,14 +73,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         if (isFinishing) {
-            stopService(Intent(this, SensorService::class.java))
+            stopService(Intent(this, BridgeService::class.java))
             stopService(Intent(this, EnvironmentService::class.java))
         }
         super.onDestroy()
     }
 
     private fun startStreaming() {
-        ContextCompat.startForegroundService(this, Intent(this, SensorService::class.java))
+        ContextCompat.startForegroundService(this, Intent(this, BridgeService::class.java))
     }
 
     private fun handleIfShared(intent: Intent) {

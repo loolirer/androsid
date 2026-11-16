@@ -21,7 +21,7 @@ The core logic is partitioned across the following modules:
   Managed node implementation (`AndroidSensors`) derived from `rclpy.lifecycle.Node`. Creates lifecycle sensor publishers and ensures determinism by controlling when telemetry publication is activated or suppressed based on lifecycle state transitions.
 
 * **`android_bridge/android_actuators.py`**:
-  Standard node implementation (`AndroidActuators`) derived from `rclpy.node.Node`. Exposes service servers and handles UNIX domain socket communication to dispatch commands to the Android device.
+  Managed node implementation (`AndroidActuators`) derived from `rclpy.lifecycle.Node`. Exposes service servers and handles UNIX domain socket communication to dispatch commands to the Android device.
 
 * **`launch/android_bridge.launch.py`**:
   Declarative ROS 2 launch description. Configures node startup arguments, instantiates both nodes and supports modular bringup via boolean launch arguments (`launch_sensors` and `launch_actuators`).

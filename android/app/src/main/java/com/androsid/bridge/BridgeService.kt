@@ -18,15 +18,15 @@ import com.androsid.sensors.Sensor
 import org.json.JSONObject
 import java.io.File
 
-class SensorService : ForegroundService(
+class BridgeService : ForegroundService(
     channelId = "androsid_stream",
     channelName = "androsid stream",
     notificationId = 1,
-    initialText = "Streaming sensors",
+    initialText = "Androsid bridge active",
 ) {
 
     companion object {
-        private const val TAG = "SensorService"
+        private const val TAG = "BridgeService"
     }
 
     private lateinit var sensorServer: StreamServer
