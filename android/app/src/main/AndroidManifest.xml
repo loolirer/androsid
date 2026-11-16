@@ -46,7 +46,7 @@
         </activity>
 
         <service
-            android:name=".bridge.SensorService"
+            android:name=".bridge.BridgeService"
             android:exported="false"
             android:stopWithTask="true"
             android:foregroundServiceType="camera|location|dataSync" />
