@@ -42,12 +42,12 @@ ssh -p 8022 root@<phone-ip>
 And launch the bridge:
 
 ```bash
-ros2 launch android_bridge android_sensors.launch.py
+ros2 launch android_bridge android_bridge.launch.py
 ```
 
 ## Usage
 
-If everything is working correctly, the bridge nodes should be publishing on the topics below:
+If everything is working correctly, the `android_sensors` node should be publishing on the topics below:
 
 - `/imu/data_raw`
 - `/imu/mag`
@@ -55,7 +55,7 @@ If everything is working correctly, the bridge nodes should be publishing on the
 - `/camera/<name>/image_raw/compressed` for each name in the `camera_names` parameter
 - `/battery_state`
 
-And serving the following service:
+And `android_actuators` node should be serving the following service:
 
 - `/set_torch`
 

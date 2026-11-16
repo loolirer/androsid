@@ -54,6 +54,7 @@ class AndroidSensors(LifecycleNode):
 
         self._sock = None
         self._sock_address = '/run/androsid/android_sensors.sock'
+        self._send_lock = threading.Lock()
 
         self._unrecognized_cameras = set()
 
@@ -125,8 +126,9 @@ class AndroidSensors(LifecycleNode):
         return super().destroy_node()
 
     def _stop_streaming(self):
-        self._stop.set()
-        sock, self._sock = self._sock, None
+        with self._send_lock:
+            self._stop.set()
+            sock, self._sock = self._sock, None
 
         if sock is not None:
             try:
@@ -149,9 +151,10 @@ class AndroidSensors(LifecycleNode):
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
-                if self._stop.is_set():
-                    break
-                self._sock = sock
+                with self._send_lock:
+                    if self._stop.is_set():
+                        break
+                    self._sock = sock
                 self.get_logger().info('Bridge connected!')
                 self._consume(sock)
 
@@ -164,7 +167,9 @@ class AndroidSensors(LifecycleNode):
                 self._stop.wait(1.0)
 
             finally:
-                self._sock = None
+                with self._send_lock:
+                    if self._sock is sock:
+                        self._sock = None
                 if sock is not None:
                     sock.close()
 

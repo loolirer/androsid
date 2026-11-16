@@ -37,7 +37,6 @@ class AndroidActuators(LifecycleNode):
         self._sock = None
         self._sock_address = '/run/androsid/android_actuators.sock'
         self._send_lock = threading.Lock()
-        self._is_active = False
 
     def on_configure(self, state):
         self.srvs['torch'] = self.create_service(
@@ -53,39 +52,34 @@ class AndroidActuators(LifecycleNode):
 
     def on_activate(self, state):
         result = super().on_activate(state)
-        self._is_active = True
         self.get_logger().info('Activated')
         return result
 
     def on_deactivate(self, state):
-        self._is_active = False
         result = super().on_deactivate(state)
         self.get_logger().info('Deactivated')
         return result
 
     def on_cleanup(self, state):
-        self._is_active = False
         self._stop_streaming()
         self._destroy_resources()
         self.get_logger().info('Cleaned Up')
         return TransitionCallbackReturn.SUCCESS
 
     def on_shutdown(self, state):
-        self._is_active = False
         self._stop_streaming()
         self._destroy_resources()
         self.get_logger().info('Shut Down')
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
-        self._is_active = False
         self._stop_streaming()
         self._destroy_resources()
         return super().destroy_node()
 
     def _stop_streaming(self):
-        self._stop.set()
         with self._send_lock:
+            self._stop.set()
             sock, self._sock = self._sock, None
 
         if sock is not None:
@@ -109,9 +103,9 @@ class AndroidActuators(LifecycleNode):
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
-                if self._stop.is_set():
-                    break
                 with self._send_lock:
+                    if self._stop.is_set():
+                        break
                     self._sock = sock
                 self.get_logger().info('Bridge connected!')
                 self._wait_disconnect(sock)
@@ -138,10 +132,8 @@ class AndroidActuators(LifecycleNode):
                 raise ConnectionError('Stream closed')
 
     def _send_command(self, cmd, params=None):
-        if not self._is_active:
-            self.get_logger().warn(
-                f'Cannot send command "{cmd}": node inactive'
-            )
+        if self._state_machine.current_state[1] != 'active':
+            self.get_logger().warn(f'Cannot send command "{cmd}": node inactive')
             return False
 
         if params is None:

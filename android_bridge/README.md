@@ -46,12 +46,6 @@ The core logic is partitioned across the following modules:
 | `gps_frame` | `string` | `gps_link` | Frame ID stamped in NavSatFix message headers. |
 | `camera_names` | `string_array` | `[front_0,rear_0]` | List of expected camera identifiers. |
 
-### Parameters (`android_actuators`)
-
-| Parameter | Type | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `socket_address` | `string` | `/run/androsid/mobile_actuators.sock` | Path to the Android command UNIX domain socket. |
-
 ### Published Topics
 
 | Topic | Type | Frame ID | Description |
