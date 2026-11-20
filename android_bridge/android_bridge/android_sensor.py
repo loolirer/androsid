@@ -102,29 +102,16 @@ class AndroidSensor(LifecycleNode):
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-        self.get_logger().info('Configured')
         return TransitionCallbackReturn.SUCCESS
-
-    def on_activate(self, state):
-        result = super().on_activate(state)
-        self.get_logger().info('Activated')
-        return result
-
-    def on_deactivate(self, state):
-        result = super().on_deactivate(state)
-        self.get_logger().info('Deactivated')
-        return result
 
     def on_cleanup(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info('Cleaned Up')
         return TransitionCallbackReturn.SUCCESS
 
     def on_shutdown(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info('Shut Down')
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):

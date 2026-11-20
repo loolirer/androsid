@@ -35,7 +35,6 @@ class AndroidActuator(LifecycleNode):
 
         self.actuator = None
         self._srv = None
-        self._service_name = None
 
         self._stop = threading.Event()
         self._thread = None
@@ -81,38 +80,22 @@ class AndroidActuator(LifecycleNode):
             )
             return TransitionCallbackReturn.FAILURE
 
-        self._service_name = service
-        self._srv = self.create_service(
-            self.actuator.srv_type, self._service_name, self._on_request
-        )
+        self._srv = self.create_service(self.actuator.srv_type, service, self._on_request)
 
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-        self.get_logger().info('Configured')
         return TransitionCallbackReturn.SUCCESS
-
-    def on_activate(self, state):
-        result = super().on_activate(state)
-        self.get_logger().info('Activated')
-        return result
-
-    def on_deactivate(self, state):
-        result = super().on_deactivate(state)
-        self.get_logger().info('Deactivated')
-        return result
 
     def on_cleanup(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info('Cleaned Up')
         return TransitionCallbackReturn.SUCCESS
 
     def on_shutdown(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info('Shut Down')
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
@@ -176,24 +159,22 @@ class AndroidActuator(LifecycleNode):
                 raise ConnectionError('Stream closed')
 
     def _send_command(self, params):
-        service = self._service_name
-
         if self._state_machine.current_state[1] != 'active':
-            self.get_logger().warn(f'Cannot call "{service}": node inactive')
+            self.get_logger().warn(f'Cannot call "{self._srv.srv_name}": node inactive')
             return False
 
         cmd_bytes = (json.dumps(params) + '\n').encode('utf-8')
 
         with self._send_lock:
             if self._sock is None:
-                self.get_logger().warn(f'Cannot call "{service}": socket not connected')
+                self.get_logger().warn(f'Cannot call "{self._srv.srv_name}": socket not connected')
                 return False
 
             try:
                 self._sock.sendall(cmd_bytes)
                 return True
             except OSError as e:
-                self.get_logger().error(f'Failed to send "{service}" command: {e}')
+                self.get_logger().error(f'Failed to send "{self._srv.srv_name}" command: {e}')
                 try:
                     self._sock.shutdown(socket.SHUT_RDWR)
                 except OSError:
