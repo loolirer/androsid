@@ -82,14 +82,24 @@ class AndroidActuator(LifecycleNode):
 
         self._srv = self.create_service(self.actuator.srv_type, service, self._on_request)
 
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, state):
+        ret = super().on_activate(state)
+        if ret != TransitionCallbackReturn.SUCCESS:
+            return ret
+
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
         return TransitionCallbackReturn.SUCCESS
 
-    def on_cleanup(self, state):
+    def on_deactivate(self, state):
         self._stop_streaming()
+        return super().on_deactivate(state)
+
+    def on_cleanup(self, state):
         self._destroy_resources()
         return TransitionCallbackReturn.SUCCESS
 
@@ -159,7 +169,7 @@ class AndroidActuator(LifecycleNode):
                 raise ConnectionError('Stream closed')
 
     def _send_command(self, params):
-        if self._state_machine.current_state[1] != 'active':
+        if self._thread is None:
             self.get_logger().warn(f'Cannot call "{self._srv.srv_name}": node inactive')
             return False
 

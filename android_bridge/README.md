@@ -21,10 +21,10 @@ The core logic is partitioned across the following modules:
   One `Actuator` subclass per supported service type (`SetTorch`). Each declares its `srv_type` and overrides `to_cmd` to turn a request into the JSON command sent to the device.
 
 * **`android_bridge/android_sensor.py`**:
-  Generic lifecycle node (`AndroidSensor`). Picks its `Sensor` from the `msg_type` parameter, reads the socket in a background thread and publishes through a lifecycle publisher, so publication follows the node's lifecycle state.
+  Generic lifecycle node (`AndroidSensor`). Picks its `Sensor` from the `msg_type` parameter, checks the socket exists on configure, connects on activate and disconnects on deactivate. The device only encodes a channel while a client is connected, so an inactive node stops that work on the phone.
 
 * **`android_bridge/android_actuator.py`**:
-  Generic lifecycle node (`AndroidActuator`). Picks its `Actuator` from the `srv_type` parameter and forwards service requests to the socket while active.
+  Generic lifecycle node (`AndroidActuator`). Picks its `Actuator` from the `srv_type` parameter and checks the socket exists on configure, connects on activate and disconnects on deactivate. Service requests are only forwarded while active.
 
 * **`launch/android_bridge.launch.py`**:
   Starts one node instance per top-level block in the YAML configs, configures and activates each one, and supports modular bringup via boolean launch arguments (`launch_sensors` and `launch_actuators`).

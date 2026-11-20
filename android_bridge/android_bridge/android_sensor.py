@@ -98,14 +98,24 @@ class AndroidSensor(LifecycleNode):
             ),
         )
 
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, state):
+        ret = super().on_activate(state)
+        if ret != TransitionCallbackReturn.SUCCESS:
+            return ret
+
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
         return TransitionCallbackReturn.SUCCESS
 
-    def on_cleanup(self, state):
+    def on_deactivate(self, state):
         self._stop_streaming()
+        return super().on_deactivate(state)
+
+    def on_cleanup(self, state):
         self._destroy_resources()
         return TransitionCallbackReturn.SUCCESS
 
@@ -188,8 +198,7 @@ class AndroidSensor(LifecycleNode):
                 continue
 
             try:
-                if self._pub.is_activated:
-                    self._pub.publish(self.sensor.to_msg(sample))
+                self._pub.publish(self.sensor.to_msg(sample))
             except (KeyError, TypeError, ValueError) as e:
                 self.get_logger().fatal(
                     f'Message format mismatch for {self.sensor.msg_type.__name__}: {e!r}'
