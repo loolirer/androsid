@@ -1,0 +1,5 @@
+/android_torch:
+  ros__parameters:
+    srv_type: android_interfaces/srv/SetTorch
+    socket_path: /run/androsid/torch.sock
+    service: set_torch

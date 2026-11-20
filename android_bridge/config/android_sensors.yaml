@@ -1,10 +1,9 @@
-/android_sensors:
+/android_imu:
   ros__parameters:
-    imu_frame: imu_link
-    gps_frame: gps_link
-    camera_names:
-      - front_0
-      - rear_0
+    msg_type: sensor_msgs/msg/Imu
+    socket_path: /run/androsid/imu.sock
+    topic: imu/data_raw
+    frame_id: imu_link
     qos_overrides:
       /imu/data_raw:
         publisher:
@@ -12,33 +11,73 @@
           durability: volatile
           history: keep_last
           depth: 5
+
+/android_mag:
+  ros__parameters:
+    msg_type: sensor_msgs/msg/MagneticField
+    socket_path: /run/androsid/mag.sock
+    topic: imu/mag
+    frame_id: imu_link
+    qos_overrides:
       /imu/mag:
         publisher:
           reliability: best_effort
           durability: volatile
           history: keep_last
           depth: 5
+
+/android_gps:
+  ros__parameters:
+    msg_type: sensor_msgs/msg/NavSatFix
+    socket_path: /run/androsid/gps.sock
+    topic: gps/fix
+    frame_id: gps_link
+    qos_overrides:
       /gps/fix:
         publisher:
           reliability: reliable
           durability: volatile
           history: keep_last
           depth: 5
-      /camera/front_0/image_raw/compressed:
-        publisher:
-          reliability: best_effort
-          durability: volatile
-          history: keep_last
-          depth: 5
-      /camera/rear_0/image_raw/compressed:
-        publisher:
-          reliability: best_effort
-          durability: volatile
-          history: keep_last
-          depth: 5
+
+/android_battery:
+  ros__parameters:
+    msg_type: sensor_msgs/msg/BatteryState
+    socket_path: /run/androsid/battery.sock
+    topic: battery_state
+    frame_id: ''
+    qos_overrides:
       /battery_state:
         publisher:
           reliability: reliable
           durability: transient_local
           history: keep_last
           depth: 1
+
+/android_camera_front_0:
+  ros__parameters:
+    msg_type: sensor_msgs/msg/CompressedImage
+    socket_path: /run/androsid/camera_front_0.sock
+    topic: camera/front_0/image_raw/compressed
+    frame_id: camera_front_0_optical_frame
+    qos_overrides:
+      /camera/front_0/image_raw/compressed:
+        publisher:
+          reliability: best_effort
+          durability: volatile
+          history: keep_last
+          depth: 5
+
+/android_camera_rear_0:
+  ros__parameters:
+    msg_type: sensor_msgs/msg/CompressedImage
+    socket_path: /run/androsid/camera_rear_0.sock
+    topic: camera/rear_0/image_raw/compressed
+    frame_id: camera_rear_0_optical_frame
+    qos_overrides:
+      /camera/rear_0/image_raw/compressed:
+        publisher:
+          reliability: best_effort
+          durability: volatile
+          history: keep_last
+          depth: 5

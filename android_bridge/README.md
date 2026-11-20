@@ -6,7 +6,7 @@ ROS 2 bridge package for streaming Android sensor telemetry and handling hardwar
 
 ## Overview
 
-`android_bridge` is an `ament_python` package that interfaces ROS 2 with Android devices running the sensor streamer. It has two decoupled nodes: one for handling unidirectional sensor telemetry via lifecycle-managed publishers, and another managing event-driven hardware actuation.
+`android_bridge` is an `ament_python` package that interfaces ROS 2 with Android devices running the sensor streamer. It ships two generic lifecycle nodes, and the launch file starts one instance per channel: `android_sensors` publishes one topic from one socket, and `android_actuators` serves one service that writes to one socket. Each instance has its own lifecycle, so channels can be started, stopped and fail independently.
 
 ---
 
@@ -14,17 +14,20 @@ ROS 2 bridge package for streaming Android sensor telemetry and handling hardwar
 
 The core logic is partitioned across the following modules:
 
-* **`android_bridge/android_to_ros.py`**:
-  Pure conversion utilities and mathematical transformations. Converts raw newline-delimited JSON payloads into typed `sensor_msgs` (`Imu`, `MagneticField`, `NavSatFix`, `BatteryState`, `CompressedImage`). Applies coordinate frame rotations from native Android sensor axes to the ROS standard Forward-Left-Up (FLU) body frame, sets REP-145 covariance flags, and decodes Base64 JPEG buffers.
+* **`android_bridge/sensors/`**:
+  One `Sensor` subclass per supported message type (`Imu`, `MagneticField`, `NavSatFix`, `BatteryState`, `CompressedImage`). Each declares its `msg_type` and overrides `to_msg` to convert one newline-delimited JSON payload: rotating Android sensor axes into the ROS Forward-Left-Up (FLU) body frame, setting REP-145 covariance flags, decoding Base64 JPEG buffers. Subclasses register themselves by message type.
+
+* **`android_bridge/actuators/`**:
+  One `Actuator` subclass per supported service type (`SetTorch`). Each declares its `srv_type` and overrides `to_cmd` to turn a request into the JSON command sent to the device.
 
 * **`android_bridge/android_sensors.py`**:
-  Managed node implementation (`AndroidSensors`) derived from `rclpy.lifecycle.Node`. Creates lifecycle sensor publishers and ensures determinism by controlling when telemetry publication is activated or suppressed based on lifecycle state transitions.
+  Generic lifecycle node (`AndroidSensor`). Picks its `Sensor` from the `msg_type` parameter, reads the socket in a background thread and publishes through a lifecycle publisher, so publication follows the node's lifecycle state.
 
 * **`android_bridge/android_actuators.py`**:
-  Managed node implementation (`AndroidActuators`) derived from `rclpy.lifecycle.Node`. Exposes service servers and handles UNIX domain socket communication to dispatch commands to the Android device.
+  Generic lifecycle node (`AndroidActuator`). Picks its `Actuator` from the `srv_type` parameter and forwards service requests to the socket while active.
 
 * **`launch/android_bridge.launch.py`**:
-  Declarative ROS 2 launch description. Configures node startup arguments, instantiates both nodes and supports modular bringup via boolean launch arguments (`launch_sensors` and `launch_actuators`).
+  Starts one node instance per top-level block in the YAML configs, configures and activates each one, and supports modular bringup via boolean launch arguments (`launch_sensors` and `launch_actuators`).
 
 * **`config/`** *(Configuration and Layout Presets)*:
   Contains node parameter definitions and visualization configurations.
@@ -35,32 +38,42 @@ The core logic is partitioned across the following modules:
 
 ### Managed Nodes
 
-* **`android_sensors`**: Lifecycle node handling device streaming and topic dispatching.
-* **`android_actuators`**: Node handling hardware actuation endpoints and command dispatch.
+Instances started by `android_bridge.launch.py`, configured in `config/android_sensors.yaml` and `config/android_actuators.yaml`:
+
+| Node | Type | Socket | Frame ID | Interface |
+| :--- | :--- | :--- | :--- | :--- |
+| `android_imu` | `sensor_msgs/msg/Imu` | `imu.sock` | `imu_link` | `/imu/data_raw` |
+| `android_mag` | `sensor_msgs/msg/MagneticField` | `mag.sock` | `imu_link` | `/imu/mag` |
+| `android_gps` | `sensor_msgs/msg/NavSatFix` | `gps.sock` | `gps_link` | `/gps/fix` |
+| `android_battery` | `sensor_msgs/msg/BatteryState` | `battery.sock` | *N/A* | `/battery_state` |
+| `android_camera_front_0` | `sensor_msgs/msg/CompressedImage` | `camera_front_0.sock` | `camera_front_0_optical_frame` | `/camera/front_0/image_raw/compressed` |
+| `android_camera_rear_0` | `sensor_msgs/msg/CompressedImage` | `camera_rear_0.sock` | `camera_rear_0_optical_frame` | `/camera/rear_0/image_raw/compressed` |
+| `android_torch` | `android_interfaces/srv/SetTorch` | `torch.sock` | *N/A* | `/set_torch` |
+
+Sockets live under `/run/androsid/`.
 
 ### Parameters (`android_sensors`)
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `imu_frame` | `string` | `imu_link` | Frame ID stamped in IMU and magnetic field headers. |
-| `gps_frame` | `string` | `gps_link` | Frame ID stamped in NavSatFix message headers. |
-| `camera_names` | `string_array` | `[front_0,rear_0]` | List of expected camera identifiers. |
+| `msg_type` | `string` | *required* | Message type to publish, as written in the ROS CLI (`sensor_msgs/msg/Imu` or `sensor_msgs/Imu`). |
+| `socket_path` | `string` | *required* | UNIX socket the device streams this channel on. |
+| `frame_id` | `string` | `''` | Frame ID stamped in message headers. |
+| `topic` | `string` | *required* | Topic to publish on. |
 
-### Published Topics
+### Parameters (`android_actuators`)
 
-| Topic | Type | Frame ID | Description |
+| Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `imu/data_raw` | `sensor_msgs/msg/Imu` | `imu_link` | Linear acceleration and angular velocity in FLU frame. |
-| `imu/mag` | `sensor_msgs/msg/MagneticField` | `imu_link` | Tri-axial magnetic field in Teslas. |
-| `gps/fix` | `sensor_msgs/msg/NavSatFix` | `gps_link` | Geodetic coordinates and horizontal/vertical accuracy covariances. |
-| `battery_state` | `sensor_msgs/msg/BatteryState` | *N/A* | Telemetry on battery voltage, percentage, health, and charging status. |
-| `camera/<name>/image_raw/compressed` | `sensor_msgs/msg/CompressedImage` | `camera_<name>_optical_frame` | JPEG-compressed image stream per declared camera handle. |
+| `srv_type` | `string` | *required* | Service type to serve (`android_interfaces/srv/SetTorch`). |
+| `socket_path` | `string` | *required* | UNIX socket the device listens for commands on. |
+| `service` | `string` | *required* | Service name to serve. |
 
-### Services
+### Adding a channel
 
-| Service | Type | Description |
-| :--- | :--- | :--- |
-| `set_torch` | `android_interfaces/srv/SetTorch` | Toggles the device camera torch/flash on or off. |
+1. Add a `Sensor` (or `Actuator`) subclass under `android_bridge/sensors/` (or `actuators/`) that overrides `to_msg` (or `to_cmd`), and import it in that package's `__init__.py`.
+2. Add the matching Kotlin `Sensor` (or `Actuator`) on the device, with its own socket.
+3. Add a parameter block to the YAML config. The launch file starts one node per top-level block.
 
 ---
 
@@ -88,15 +101,23 @@ ros2 launch android_bridge android_bridge.launch.py launch_actuators:=false laun
 
 ### Lifecycle Control
 
-Manage the `android_sensors` node state through the ROS 2 lifecycle CLI:
+Each instance is managed independently through the ROS 2 lifecycle CLI:
 
 ```bash
-ros2 lifecycle set /android_sensors configure
+ros2 lifecycle set /android_camera_rear_0 deactivate
 
-ros2 lifecycle set /android_sensors deactivate
+ros2 lifecycle set /android_camera_rear_0 activate
+```
 
-ros2 lifecycle set /android_sensors activate
+A single instance can also be run on its own:
 
+```bash
+ros2 run android_bridge android_sensors --ros-args \
+  -r __node:=android_imu \
+  -p msg_type:=sensor_msgs/msg/Imu \
+  -p socket_path:=/run/androsid/imu.sock \
+  -p topic:=imu/data_raw \
+  -p frame_id:=imu_link
 ```
 
 ### Testing

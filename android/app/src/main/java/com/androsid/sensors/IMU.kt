@@ -7,13 +7,13 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Handler
 import android.util.Log
-import com.androsid.bridge.StreamServer
+import java.io.File
 
 class IMU(
     context: Context,
-    server: StreamServer,
+    socket: File,
     private val handler: Handler,
-) : Sensor<SensorEvent>(context, server) {
+) : Sensor<SensorEvent>(context, socket) {
 
     companion object {
         private const val SENSOR_PERIOD_US = 5000
@@ -55,7 +55,7 @@ class IMU(
 
     override fun read(event: SensorEvent): ByteArray? = lastAccel?.let { accel ->
         message(
-            "imu", event.timestamp,
+            event.timestamp,
             """"accel":[${accel[0]},${accel[1]},${accel[2]}],"gyro":[${event.values[0]},${event.values[1]},${event.values[2]}]"""
         )
     }

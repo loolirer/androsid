@@ -16,80 +16,77 @@ import json
 import socket
 import threading
 
-from android_bridge.android_to_ros import (
-    battery_msg,
-    frame_msg,
-    gps_msg,
-    imu_msg,
-    mag_msg,
-)
+from android_bridge.sensors import Sensor
 import rclpy
 from rclpy.lifecycle import Node as LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
-from rclpy.parameter import Parameter
 from rclpy.qos import QoSPolicyKind
 from rclpy.qos_overriding_options import QoSOverridingOptions
-from sensor_msgs.msg import (
-    BatteryState,
-    CompressedImage,
-    Imu,
-    MagneticField,
-    NavSatFix,
-)
 
 
-class AndroidSensors(LifecycleNode):
+class AndroidSensor(LifecycleNode):
 
     def __init__(self):
-        super().__init__('android_sensors')
+        super().__init__('android_sensor')
 
-        self.declare_parameter('imu_frame', 'imu_link')
-        self.declare_parameter('gps_frame', 'gps_link')
-        self.declare_parameter('camera_names', Parameter.Type.STRING_ARRAY)
+        self.declare_parameter('msg_type', '')
+        self.declare_parameter('socket_path', '')
+        self.declare_parameter('frame_id', '')
+        self.declare_parameter('topic', '')
 
-        self.pubs = {}
+        self.sensor = None
+        self._pub = None
 
         self._stop = threading.Event()
         self._thread = None
 
         self._sock = None
-        self._sock_address = '/run/androsid/android_sensors.sock'
-        self._send_lock = threading.Lock()
-
-        self._unrecognized_cameras = set()
+        self._sock_address = None
+        self._sock_lock = threading.Lock()
 
     def on_configure(self, state):
-        self.imu_frame = self.get_parameter('imu_frame').value
-        self.gps_frame = self.get_parameter('gps_frame').value
-        self.camera_names = self.get_parameter('camera_names').value
+        msg_type = self.get_parameter('msg_type').value
+        self._sock_address = self.get_parameter('socket_path').value
+        frame_id = self.get_parameter('frame_id').value
+        topic = self.get_parameter('topic').value
 
-        self.qos_overrides = QoSOverridingOptions(
-            policy_kinds=(
-                QoSPolicyKind.RELIABILITY,
-                QoSPolicyKind.DURABILITY,
-                QoSPolicyKind.HISTORY,
-                QoSPolicyKind.DEPTH,
+        required = (
+            ('msg_type', msg_type),
+            ('socket_path', self._sock_address),
+            ('topic', topic),
+        )
+        for name, value in required:
+            if not value:
+                self.get_logger().error(f'Parameter "{name}" is required')
+                return TransitionCallbackReturn.FAILURE
+
+        try:
+            self.sensor = Sensor.for_type(msg_type, frame_id)
+        except (ValueError, ImportError, AttributeError) as e:
+            self.get_logger().error(f'"{msg_type}" is not a ROS message type: {e}')
+            return TransitionCallbackReturn.FAILURE
+        except KeyError:
+            supported = ', '.join(
+                f'{t.__module__.split(".")[0]}/msg/{t.__name__}' for t in Sensor.registry
             )
-        )
-        self.pubs['imu'] = self.create_lifecycle_publisher(
-            Imu, 'imu/data_raw', 10, qos_overriding_options=self.qos_overrides
-        )
-        self.pubs['mag'] = self.create_lifecycle_publisher(
-            MagneticField, 'imu/mag', 10, qos_overriding_options=self.qos_overrides
-        )
-        self.pubs['gps'] = self.create_lifecycle_publisher(
-            NavSatFix, 'gps/fix', 10, qos_overriding_options=self.qos_overrides
-        )
-        self.pubs['battery'] = self.create_lifecycle_publisher(
-            BatteryState, 'battery_state', 10, qos_overriding_options=self.qos_overrides
-        )
-        for camera_name in self.camera_names:
-            self.pubs[f'img_{camera_name}'] = self.create_lifecycle_publisher(
-                CompressedImage,
-                f'camera/{camera_name}/image_raw/compressed',
-                10,
-                qos_overriding_options=self.qos_overrides,
+            self.get_logger().error(
+                f'No sensor converts to "{msg_type}". Supported: {supported}'
             )
+            return TransitionCallbackReturn.FAILURE
+
+        self._pub = self.create_lifecycle_publisher(
+            self.sensor.msg_type,
+            topic,
+            10,
+            qos_overriding_options=QoSOverridingOptions(
+                policy_kinds=(
+                    QoSPolicyKind.RELIABILITY,
+                    QoSPolicyKind.DURABILITY,
+                    QoSPolicyKind.HISTORY,
+                    QoSPolicyKind.DEPTH,
+                )
+            ),
+        )
 
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -126,7 +123,7 @@ class AndroidSensors(LifecycleNode):
         return super().destroy_node()
 
     def _stop_streaming(self):
-        with self._send_lock:
+        with self._sock_lock:
             self._stop.set()
             sock, self._sock = self._sock, None
 
@@ -141,9 +138,10 @@ class AndroidSensors(LifecycleNode):
             self._thread = None
 
     def _destroy_resources(self):
-        for pub in self.pubs.values():
-            self.destroy_lifecycle_publisher(pub)
-        self.pubs.clear()
+        if self._pub is not None:
+            self.destroy_lifecycle_publisher(self._pub)
+            self._pub = None
+        self.sensor = None
 
     def _run(self):
         while not self._stop.is_set() and rclpy.ok():
@@ -151,7 +149,7 @@ class AndroidSensors(LifecycleNode):
             try:
                 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 sock.connect(self._sock_address)
-                with self._send_lock:
+                with self._sock_lock:
                     if self._stop.is_set():
                         break
                     self._sock = sock
@@ -167,7 +165,7 @@ class AndroidSensors(LifecycleNode):
                 self._stop.wait(1.0)
 
             finally:
-                with self._send_lock:
+                with self._sock_lock:
                     if self._sock is sock:
                         self._sock = None
                 if sock is not None:
@@ -185,8 +183,7 @@ class AndroidSensors(LifecycleNode):
 
             try:
                 sample = json.loads(line)
-                sample_type = sample.get('type')
-            except (ValueError, AttributeError) as e:
+            except ValueError as e:
                 self.get_logger().warn(
                     f'Dropping malformed sample: {e}',
                     throttle_duration_sec=5.0,
@@ -194,58 +191,20 @@ class AndroidSensors(LifecycleNode):
                 continue
 
             try:
-                if sample_type == 'imu':
-                    self._on_imu(sample)
-                elif sample_type == 'mag':
-                    self._on_mag(sample)
-                elif sample_type == 'gps':
-                    self._on_gps(sample)
-                elif sample_type == 'frame':
-                    self._on_frame(sample)
-                elif sample_type == 'battery':
-                    self._on_battery(sample)
+                if self._pub.is_activated:
+                    self._pub.publish(self.sensor.to_msg(sample))
             except (KeyError, TypeError, ValueError) as e:
                 self.get_logger().fatal(
-                    f'Message format mismatch in "{sample_type}" sample: {e!r}'
+                    f'Message format mismatch for {self.sensor.msg_type.__name__}: {e!r}'
                 )
                 self._stop.set()
                 self.executor.create_task(self.trigger_shutdown)
                 return
 
-    def _on_imu(self, sample):
-        if self.pubs['imu'].is_activated:
-            self.pubs['imu'].publish(imu_msg(sample, self.imu_frame))
-
-    def _on_mag(self, sample):
-        if self.pubs['mag'].is_activated:
-            self.pubs['mag'].publish(mag_msg(sample, self.imu_frame))
-
-    def _on_gps(self, sample):
-        if self.pubs['gps'].is_activated:
-            self.pubs['gps'].publish(gps_msg(sample, self.gps_frame))
-
-    def _on_frame(self, sample):
-        camera_name = sample.get('camera_name', 'default')
-        pub = self.pubs.get(f'img_{camera_name}')
-        if pub is None:
-            if camera_name not in self._unrecognized_cameras:
-                self._unrecognized_cameras.add(camera_name)
-                self.get_logger().warn(
-                    f'Received frame from unrecognized camera "{camera_name}"'
-                )
-            return
-
-        if pub.is_activated:
-            pub.publish(frame_msg(sample, f'camera_{camera_name}_optical_frame'))
-
-    def _on_battery(self, sample):
-        if self.pubs['battery'].is_activated:
-            self.pubs['battery'].publish(battery_msg(sample))
-
 
 def main(args=None):
     rclpy.init(args=args)
-    node = AndroidSensors()
+    node = AndroidSensor()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

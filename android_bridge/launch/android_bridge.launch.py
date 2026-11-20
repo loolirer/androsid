@@ -16,95 +16,58 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, EmitEvent, GroupAction, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.event_handlers import OnProcessStart
-from launch.events import matches_action
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import LifecycleNode
-from launch_ros.event_handlers import OnStateTransition
-from launch_ros.events.lifecycle import ChangeState
-from lifecycle_msgs.msg import Transition
+import yaml
 
 
-def _lifecycle_group(node, condition_arg):
-    configure_on_start = RegisterEventHandler(
-        OnProcessStart(
-            target_action=node,
-            on_start=[
-                EmitEvent(
-                    event=ChangeState(
-                        lifecycle_node_matcher=matches_action(node),
-                        transition_id=Transition.TRANSITION_CONFIGURE,
-                    )
-                ),
-            ],
+def _instances(executable, params_file, condition_arg):
+    with open(params_file) as f:
+        names = [key.lstrip('/') for key in yaml.safe_load(f)]
+
+    return [
+        LifecycleNode(
+            package='android_bridge',
+            executable=executable,
+            name=name,
+            namespace='',
+            parameters=[params_file],
+            autostart=True,
+            condition=IfCondition(LaunchConfiguration(condition_arg)),
         )
-    )
-
-    activate_on_configured = RegisterEventHandler(
-        OnStateTransition(
-            target_lifecycle_node=node,
-            goal_state='inactive',
-            entities=[
-                EmitEvent(
-                    event=ChangeState(
-                        lifecycle_node_matcher=matches_action(node),
-                        transition_id=Transition.TRANSITION_ACTIVATE,
-                    )
-                ),
-            ],
-        )
-    )
-
-    return GroupAction(
-        actions=[
-            node,
-            configure_on_start,
-            activate_on_configured,
-        ],
-        condition=IfCondition(LaunchConfiguration(condition_arg)),
-    )
+        for name in names
+    ]
 
 
 def generate_launch_description():
-    params_file = os.path.join(
-        get_package_share_directory('android_bridge'),
-        'config',
-        'android_sensors.yaml',
-    )
+    config_dir = os.path.join(get_package_share_directory('android_bridge'), 'config')
 
     launch_sensors = DeclareLaunchArgument(
         'launch_sensors',
         default_value='true',
-        description='Launch the android_sensors node'
+        description='Launch the sensor nodes'
     )
     launch_actuators = DeclareLaunchArgument(
         'launch_actuators',
         default_value='true',
-        description='Launch the android_actuators node'
-    )
-
-    android_sensors_node = LifecycleNode(
-        package='android_bridge',
-        executable='android_sensors',
-        name='android_sensors',
-        namespace='',
-        parameters=[params_file],
-    )
-
-    android_actuators_node = LifecycleNode(
-        package='android_bridge',
-        executable='android_actuators',
-        name='android_actuators',
-        namespace='',
+        description='Launch the actuator nodes'
     )
 
     return LaunchDescription(
         [
             launch_actuators,
             launch_sensors,
-            _lifecycle_group(android_sensors_node, 'launch_sensors'),
-            _lifecycle_group(android_actuators_node, 'launch_actuators')
+            *_instances(
+                'android_sensors',
+                os.path.join(config_dir, 'android_sensors.yaml'),
+                'launch_sensors',
+            ),
+            *_instances(
+                'android_actuators',
+                os.path.join(config_dir, 'android_actuators.yaml'),
+                'launch_actuators',
+            ),
         ]
     )

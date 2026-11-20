@@ -6,10 +6,11 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.androsid.bridge.StreamServer
+import java.io.File
 
 abstract class Sensor<T>(
     protected val context: Context,
-    private val server: StreamServer,
+    socket: File,
 ) {
 
     companion object {
@@ -21,10 +22,9 @@ abstract class Sensor<T>(
 
     protected open val permission: String? = null
 
-    private var started = false
+    private val server = StreamServer(socket)
 
-    protected val isStarted: Boolean
-        get() = started
+    private var started = false
 
     fun start() {
         val p = permission
@@ -34,6 +34,7 @@ abstract class Sensor<T>(
             Log.w(tag, "$p not granted, $tag disabled")
             return
         }
+        server.start()
         onStart()
         started = true
     }
@@ -42,6 +43,7 @@ abstract class Sensor<T>(
         if (!started) return
         started = false
         onStop()
+        server.stop()
     }
 
     protected abstract fun onStart()
@@ -56,9 +58,9 @@ abstract class Sensor<T>(
         read(event)?.let(server::sendLine)
     }
 
-    protected fun header(type: String, elapsedRealtimeNanos: Long): String =
-        """{"type":"$type","stamp":${elapsedRealtimeNanos + bootToEpochNanos},"""
+    protected fun header(elapsedRealtimeNanos: Long): String =
+        """{"stamp":${elapsedRealtimeNanos + bootToEpochNanos},"""
 
-    protected fun message(type: String, elapsedRealtimeNanos: Long, fields: String): ByteArray =
-        (header(type, elapsedRealtimeNanos) + fields + "}\n").toByteArray(Charsets.UTF_8)
+    protected fun message(elapsedRealtimeNanos: Long, fields: String): ByteArray =
+        (header(elapsedRealtimeNanos) + fields + "}\n").toByteArray(Charsets.UTF_8)
 }

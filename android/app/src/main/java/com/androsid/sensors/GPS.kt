@@ -9,13 +9,13 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.util.Log
-import com.androsid.bridge.StreamServer
+import java.io.File
 
 class GPS(
     context: Context,
-    server: StreamServer,
+    socket: File,
     private val handler: Handler,
-) : Sensor<Location>(context, server) {
+) : Sensor<Location>(context, socket) {
 
     companion object {
         private const val LOCATION_PERIOD_MS = 1000L
@@ -64,7 +64,7 @@ class GPS(
         }
 
         return message(
-            "gps", event.elapsedRealtimeNanos,
+            event.elapsedRealtimeNanos,
             """"latitude":${event.latitude},"longitude":${event.longitude},""" +
             """"altitude":${event.altitude},"accuracy":${event.accuracy},"vertical_accuracy":$vertAcc,""" +
             """"speed":${event.speed},"bearing":${event.bearing},""" +

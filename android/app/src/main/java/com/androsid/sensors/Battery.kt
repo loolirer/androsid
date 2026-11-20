@@ -7,13 +7,13 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.SystemClock
-import com.androsid.bridge.StreamServer
+import java.io.File
 
 class Battery(
     context: Context,
-    server: StreamServer,
+    socket: File,
     private val handler: Handler,
-) : Sensor<Intent>(context, server) {
+) : Sensor<Intent>(context, socket) {
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) = emit(intent)
@@ -68,7 +68,7 @@ class Battery(
         val current = if (currentUa != Int.MIN_VALUE && currentUa != 0) currentUa * 1e-6f else Float.NaN
 
         return message(
-            "battery", SystemClock.elapsedRealtimeNanos(),
+            SystemClock.elapsedRealtimeNanos(),
             """"voltage":$voltage,"temperature":$temperature,"current":$current,"percentage":$percentage,"status":"$status","health":"$health","present":$present,"technology":"$technology""""
         )
     }
