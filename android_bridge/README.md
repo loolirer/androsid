@@ -6,7 +6,7 @@ ROS 2 bridge package for streaming Android sensor telemetry and handling hardwar
 
 ## Overview
 
-`android_bridge` is an `ament_python` package that interfaces ROS 2 with Android devices running the sensor streamer. It ships two generic lifecycle nodes, and the launch file starts one instance per channel: `android_sensors` publishes one topic from one socket, and `android_actuators` serves one service that writes to one socket. Each instance has its own lifecycle, so channels can be started, stopped and fail independently.
+`android_bridge` is an `ament_python` package that interfaces ROS 2 with Android devices running the sensor streamer. It ships two generic lifecycle nodes, and the launch file starts one instance per channel: `android_sensor` publishes one topic from one socket, and `android_actuator` serves one service that writes to one socket. Each instance has its own lifecycle, so channels can be started, stopped and fail independently.
 
 ---
 
@@ -20,10 +20,10 @@ The core logic is partitioned across the following modules:
 * **`android_bridge/actuators/`**:
   One `Actuator` subclass per supported service type (`SetTorch`). Each declares its `srv_type` and overrides `to_cmd` to turn a request into the JSON command sent to the device.
 
-* **`android_bridge/android_sensors.py`**:
+* **`android_bridge/android_sensor.py`**:
   Generic lifecycle node (`AndroidSensor`). Picks its `Sensor` from the `msg_type` parameter, reads the socket in a background thread and publishes through a lifecycle publisher, so publication follows the node's lifecycle state.
 
-* **`android_bridge/android_actuators.py`**:
+* **`android_bridge/android_actuator.py`**:
   Generic lifecycle node (`AndroidActuator`). Picks its `Actuator` from the `srv_type` parameter and forwards service requests to the socket while active.
 
 * **`launch/android_bridge.launch.py`**:
@@ -52,21 +52,21 @@ Instances started by `android_bridge.launch.py`, configured in `config/android_s
 
 Sockets live under `/run/androsid/`.
 
-### Parameters (`android_sensors`)
+### Parameters (`android_sensor`)
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `msg_type` | `string` | *required* | Message type to publish, as written in the ROS CLI (`sensor_msgs/msg/Imu` or `sensor_msgs/Imu`). |
-| `socket_path` | `string` | *required* | UNIX socket the device streams this channel on. |
+| `socket_path` | `string` | *required* | UNIX socket the device streams this channel on. Configure fails if it does not exist. |
 | `frame_id` | `string` | `''` | Frame ID stamped in message headers. |
 | `topic` | `string` | *required* | Topic to publish on. |
 
-### Parameters (`android_actuators`)
+### Parameters (`android_actuator`)
 
 | Parameter | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `srv_type` | `string` | *required* | Service type to serve (`android_interfaces/srv/SetTorch`). |
-| `socket_path` | `string` | *required* | UNIX socket the device listens for commands on. |
+| `socket_path` | `string` | *required* | UNIX socket the device listens for commands on. Configure fails if it does not exist. |
 | `service` | `string` | *required* | Service name to serve. |
 
 ### Adding a channel
@@ -112,7 +112,7 @@ ros2 lifecycle set /android_camera_rear_0 activate
 A single instance can also be run on its own:
 
 ```bash
-ros2 run android_bridge android_sensors --ros-args \
+ros2 run android_bridge android_sensor --ros-args \
   -r __node:=android_imu \
   -p msg_type:=sensor_msgs/msg/Imu \
   -p socket_path:=/run/androsid/imu.sock \

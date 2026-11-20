@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import json
+import os
 import socket
+import stat
 import threading
 
 from android_bridge.sensors import Sensor
@@ -59,6 +61,14 @@ class AndroidSensor(LifecycleNode):
             if not value:
                 self.get_logger().error(f'Parameter "{name}" is required')
                 return TransitionCallbackReturn.FAILURE
+
+        try:
+            is_socket = stat.S_ISSOCK(os.stat(self._sock_address).st_mode)
+        except OSError:
+            is_socket = False
+        if not is_socket:
+            self.get_logger().error(f'Socket "{self._sock_address}" not found')
+            return TransitionCallbackReturn.FAILURE
 
         try:
             self.sensor = Sensor.for_type(msg_type, frame_id)

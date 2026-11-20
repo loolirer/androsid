@@ -60,12 +60,12 @@ def generate_launch_description():
             launch_actuators,
             launch_sensors,
             *_instances(
-                'android_sensors',
+                'android_sensor',
                 os.path.join(config_dir, 'android_sensors.yaml'),
                 'launch_sensors',
             ),
             *_instances(
-                'android_actuators',
+                'android_actuator',
                 os.path.join(config_dir, 'android_actuators.yaml'),
                 'launch_actuators',
             ),
