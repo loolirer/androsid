@@ -31,6 +31,7 @@ def _instances(executable, params_file, condition_arg):
         LifecycleNode(
             package='android_bridge',
             executable=executable,
+            exec_name=name,
             name=name,
             namespace='',
             parameters=[params_file],
