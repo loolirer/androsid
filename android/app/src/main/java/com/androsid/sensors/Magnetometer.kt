@@ -7,13 +7,13 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Handler
 import android.util.Log
-import com.androsid.bridge.StreamServer
+import java.io.File
 
 class Magnetometer(
     context: Context,
-    server: StreamServer,
+    socket: File,
     private val handler: Handler,
-) : Sensor<SensorEvent>(context, server) {
+) : Sensor<SensorEvent>(context, socket) {
 
     companion object {
         private const val SENSOR_PERIOD_US = 10000
@@ -41,7 +41,7 @@ class Magnetometer(
     }
 
     override fun read(event: SensorEvent): ByteArray = message(
-        "mag", event.timestamp,
+        event.timestamp,
         """"mag":[${event.values[0] * MAG_SCALE},${event.values[1] * MAG_SCALE},${event.values[2] * MAG_SCALE}]"""
     )
 }

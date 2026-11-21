@@ -47,23 +47,17 @@ ros2 launch android_bridge android_bridge.launch.py
 
 ## Usage
 
-If everything is working correctly, the `android_sensors` node should be publishing on the topics below:
-
-- `/imu/data_raw`
-- `/imu/mag`
-- `/gps/fix`
-- `/camera/<name>/image_raw/compressed` for each name in the `camera_names` parameter
-- `/battery_state`
-
-And `android_actuators` node should be serving the following service:
-
-- `/set_torch`
+If everything is working correctly, there is one lifecycle node per sensor publishing its topic, and
+one per actuator serving its service. See [`android_bridge`](android_bridge/README.md) for the full
+list of nodes, topics and services, and for managing each node's lifecycle.
 
 ## Customization
 
 To adjust usage to your preference, modify:
 
-- **`android_bridge/config/android_sensors.yaml`** sets each topic's QoS profile.
+- **`android_bridge/config/android_sensors.yaml`** and **`android_actuators.yaml`** define the nodes:
+  one block per node, with its message/service type, socket, topic/service name, frame and QoS
+  profile. The launch file starts one node per block.
 - **`docker/entrypoint.sh`** runs on boot; by default it starts the bridge and `sshd`. Edit it to
   change what auto-starts.
 - **`docker/ros2.sh`** (`/etc/profile.d/ros2.sh` in the rootfs) sources the ROS 2 workspace overlay

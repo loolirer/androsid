@@ -23,6 +23,8 @@ class StreamServer(
         private const val RETRY_DELAY_MS = 1000L
     }
 
+    private val name = socketFile.name
+
     private class Client(val socket: LocalSocket) {
         val out: OutputStream = socket.outputStream
     }
@@ -34,7 +36,7 @@ class StreamServer(
     fun start() {
         if (running) return
         running = true
-        thread(name = "androsid-accept", isDaemon = true) {
+        thread(name = "androsid-accept-$name", isDaemon = true) {
             while (running) {
                 try {
                     bindListener().use { listener ->
@@ -52,7 +54,7 @@ class StreamServer(
                     }
                 } catch (e: Exception) {
                     if (running) {
-                        Log.e(TAG, "accept loop died", e)
+                        Log.e(TAG, "$name: accept loop died", e)
                         Thread.sleep(RETRY_DELAY_MS)
                     }
                 }
@@ -65,12 +67,12 @@ class StreamServer(
             client.also { client = newClient }
         }
         previous?.let {
-            Log.i(TAG, "replacing previous client")
+            Log.i(TAG, "$name: replacing previous client")
             dropClient(it)
         }
-        Log.i(TAG, "client connected")
+        Log.i(TAG, "$name: client connected")
 
-        thread(name = "androsid-reader", isDaemon = true) {
+        thread(name = "androsid-reader-$name", isDaemon = true) {
             try {
                 val reader = BufferedReader(InputStreamReader(newClient.socket.inputStream, Charsets.UTF_8))
                 while (running) {
@@ -79,7 +81,7 @@ class StreamServer(
                 }
             } catch (e: Exception) {
                 if (running) {
-                    Log.i(TAG, "client read ended: ${e.message}")
+                    Log.i(TAG, "$name: client read ended: ${e.message}")
                 }
             } finally {
                 dropClient(newClient)
@@ -117,7 +119,7 @@ class StreamServer(
         try {
             synchronized(c) { c.out.write(line) }
         } catch (e: IOException) {
-            Log.i(TAG, "client dropped: ${e.message}")
+            Log.i(TAG, "$name: client dropped: ${e.message}")
             dropClient(c)
         }
     }

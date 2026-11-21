@@ -13,63 +13,99 @@
 # limitations under the License.
 
 import json
+import os
 import socket
+import stat
 import threading
 
-from android_interfaces.srv import (
-    SetTorch,
-)
+from android_bridge.actuators import Actuator
 import rclpy
 from rclpy.lifecycle import Node as LifecycleNode
 from rclpy.lifecycle import TransitionCallbackReturn
 
 
-class AndroidActuators(LifecycleNode):
+class AndroidActuator(LifecycleNode):
 
     def __init__(self):
-        super().__init__('android_actuators')
+        super().__init__('android_actuator')
 
-        self.srvs = {}
+        self.declare_parameter('srv_type', '')
+        self.declare_parameter('socket_path', '')
+        self.declare_parameter('service', '')
+
+        self.actuator = None
+        self._srv = None
 
         self._stop = threading.Event()
         self._thread = None
 
         self._sock = None
-        self._sock_address = '/run/androsid/android_actuators.sock'
+        self._sock_address = None
         self._send_lock = threading.Lock()
 
     def on_configure(self, state):
-        self.srvs['torch'] = self.create_service(
-            SetTorch, 'set_torch', self._on_set_torch
+        srv_type = self.get_parameter('srv_type').value
+        self._sock_address = self.get_parameter('socket_path').value
+        service = self.get_parameter('service').value
+
+        required = (
+            ('srv_type', srv_type),
+            ('socket_path', self._sock_address),
+            ('service', service),
         )
+        for name, value in required:
+            if not value:
+                self.get_logger().error(f'Parameter "{name}" is required')
+                return TransitionCallbackReturn.FAILURE
+
+        try:
+            is_socket = stat.S_ISSOCK(os.stat(self._sock_address).st_mode)
+        except OSError:
+            is_socket = False
+        if not is_socket:
+            self.get_logger().error(f'Socket "{self._sock_address}" not found')
+            return TransitionCallbackReturn.FAILURE
+
+        try:
+            self.actuator = Actuator.for_type(srv_type)
+        except (ValueError, ImportError, AttributeError) as e:
+            self.get_logger().error(f'"{srv_type}" is not a ROS service type: {e}')
+            return TransitionCallbackReturn.FAILURE
+        except KeyError:
+            supported = ', '.join(
+                f'{t.__module__.split(".")[0]}/srv/{t.__name__}' for t in Actuator.registry
+            )
+            self.get_logger().error(
+                f'No actuator handles "{srv_type}". Supported: {supported}'
+            )
+            return TransitionCallbackReturn.FAILURE
+
+        self._srv = self.create_service(self.actuator.srv_type, service, self._on_request)
+
+        return TransitionCallbackReturn.SUCCESS
+
+    def on_activate(self, state):
+        ret = super().on_activate(state)
+        if ret != TransitionCallbackReturn.SUCCESS:
+            return ret
 
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
-        self.get_logger().info('Configured')
         return TransitionCallbackReturn.SUCCESS
 
-    def on_activate(self, state):
-        result = super().on_activate(state)
-        self.get_logger().info('Activated')
-        return result
-
     def on_deactivate(self, state):
-        result = super().on_deactivate(state)
-        self.get_logger().info('Deactivated')
-        return result
+        self._stop_streaming()
+        return super().on_deactivate(state)
 
     def on_cleanup(self, state):
-        self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info('Cleaned Up')
         return TransitionCallbackReturn.SUCCESS
 
     def on_shutdown(self, state):
         self._stop_streaming()
         self._destroy_resources()
-        self.get_logger().info('Shut Down')
         return TransitionCallbackReturn.SUCCESS
 
     def destroy_node(self):
@@ -93,9 +129,10 @@ class AndroidActuators(LifecycleNode):
             self._thread = None
 
     def _destroy_resources(self):
-        for srv in self.srvs.values():
-            self.destroy_service(srv)
-        self.srvs.clear()
+        if self._srv is not None:
+            self.destroy_service(self._srv)
+            self._srv = None
+        self.actuator = None
 
     def _run(self):
         while not self._stop.is_set() and rclpy.ok():
@@ -131,28 +168,23 @@ class AndroidActuators(LifecycleNode):
             if not data:
                 raise ConnectionError('Stream closed')
 
-    def _send_command(self, cmd, params=None):
-        if self._state_machine.current_state[1] != 'active':
-            self.get_logger().warn(f'Cannot send command "{cmd}": node inactive')
+    def _send_command(self, params):
+        if self._thread is None:
+            self.get_logger().warn(f'Cannot call "{self._srv.srv_name}": node inactive')
             return False
 
-        if params is None:
-            params = {}
-
-        payload = {'cmd': cmd}
-        payload.update(params)
-        cmd_bytes = (json.dumps(payload) + '\n').encode('utf-8')
+        cmd_bytes = (json.dumps(params) + '\n').encode('utf-8')
 
         with self._send_lock:
             if self._sock is None:
-                self.get_logger().warn('Cannot send command: socket not connected')
+                self.get_logger().warn(f'Cannot call "{self._srv.srv_name}": socket not connected')
                 return False
 
             try:
                 self._sock.sendall(cmd_bytes)
                 return True
             except OSError as e:
-                self.get_logger().error(f'Failed to send command "{cmd}": {e}')
+                self.get_logger().error(f'Failed to send "{self._srv.srv_name}" command: {e}')
                 try:
                     self._sock.shutdown(socket.SHUT_RDWR)
                 except OSError:
@@ -160,14 +192,14 @@ class AndroidActuators(LifecycleNode):
                 self._sock = None
                 return False
 
-    def _on_set_torch(self, request, response):
-        response.success = self._send_command('torch', {'enabled': request.data})
+    def _on_request(self, request, response):
+        response.success = self._send_command(self.actuator.to_cmd(request))
         return response
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = AndroidActuators()
+    node = AndroidActuator()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
